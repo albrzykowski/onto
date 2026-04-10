@@ -20,6 +20,12 @@ ignore = [
     "PLR2004",  # magic value comparisons
 ]
 
+[tool.ruff.lint.pylint]
+max-branches = 5
+max-locals = 5
+max-returns = 2
+max-statements = 20
+
 [tool.mypy]
 python-version = "3.14"
 warn_return_any = true
