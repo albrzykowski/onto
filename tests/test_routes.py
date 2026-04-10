@@ -1,8 +1,13 @@
 """Unit tests for routes."""
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
+
 from fastapi import HTTPException
-from app.api.routes import health, ready, create_job
+
+from app.api.routes import create_job, health, ready
 from app.schemas.job import JobRequest
+
+STATUS_SERVICE_UNAVAILABLE = 503
+STATUS_INTERNAL_SERVER_ERROR = 500
 
 
 class TestHealth:
@@ -38,7 +43,7 @@ class TestReady:
             ready()
         except HTTPException as e:
             # Then
-            assert e.status_code == 503
+            assert e.status_code == STATUS_SERVICE_UNAVAILABLE
 
 
 class TestCreateJob:
@@ -63,4 +68,4 @@ class TestCreateJob:
             create_job(job)
         except HTTPException as e:
             # Then
-            assert e.status_code == 500
+            assert e.status_code == STATUS_INTERNAL_SERVER_ERROR

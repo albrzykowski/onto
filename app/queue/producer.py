@@ -1,4 +1,8 @@
-import json, time, pulsar
+import json
+import time
+
+import pulsar
+
 from app.config import PULSAR_URL
 from app.logger import get_logger
 

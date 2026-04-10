@@ -3,6 +3,8 @@ import pytest
 import requests as r
 
 BASE = "http://localhost:8000"
+STATUS_OK = 200
+STATUS_UNPROCESSABLE_ENTITY = 422
 
 
 @pytest.mark.e2e
@@ -20,7 +22,7 @@ def test_ready():
     # When
     response = r.get(f"{BASE}/ready")
     # Then
-    assert response.status_code == 200
+    assert response.status_code == STATUS_OK
 
 
 @pytest.mark.e2e
@@ -40,7 +42,7 @@ def test_validation_empty():
     # When
     response = r.post(f"{BASE}/jobs", json=payload)
     # Then
-    assert response.status_code == 422
+    assert response.status_code == STATUS_UNPROCESSABLE_ENTITY
 
 
 @pytest.mark.e2e
@@ -50,4 +52,4 @@ def test_validation_special_chars():
     # When
     response = r.post(f"{BASE}/jobs", json=payload)
     # Then
-    assert response.status_code == 422
+    assert response.status_code == STATUS_UNPROCESSABLE_ENTITY

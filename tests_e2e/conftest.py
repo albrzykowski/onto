@@ -1,8 +1,9 @@
 """E2E test configuration - auto-skip if services not available."""
-import pytest
+import os
 import socket
 import sys
-import os
+
+import pytest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 

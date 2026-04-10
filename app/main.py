@@ -1,5 +1,7 @@
-from fastapi import FastAPI
 from contextlib import asynccontextmanager
+
+from fastapi import FastAPI
+
 from app.api.routes import router, shutdown
 from app.config import HOST, PORT
 from app.logger import get_logger
