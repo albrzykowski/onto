@@ -41,8 +41,9 @@ class TestProducer:
         # Then
         assert p.client is not None
 
+    @patch("time.sleep")
     @patch("pulsar.Client")
-    def test_send_retries_on_failure(self, mock_pulsar_client):
+    def test_send_retries_on_failure(self, mock_pulsar_client, mock_sleep):
         # Given
         mock_producer = MagicMock()
         mock_producer.send.side_effect = [Exception("fail"), Exception("fail"), MagicMock()]
@@ -58,8 +59,9 @@ class TestProducer:
         assert mock_producer.send.call_count == EXPECTED_RETRY_COUNT
         assert result is not None
 
+    @patch("time.sleep")
     @patch("pulsar.Client")
-    def test_send_raises_after_max_retries(self, mock_pulsar_client):
+    def test_send_raises_after_max_retries(self, mock_pulsar_client, mock_sleep):
         # Given
         mock_producer = MagicMock()
         mock_producer.send.side_effect = Exception("fail")
