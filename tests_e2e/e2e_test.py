@@ -4,17 +4,50 @@ import requests as r
 
 BASE = "http://localhost:8000"
 
-@pytest.mark.e2e
-def test_health(): assert r.get(f"{BASE}/health").json()["status"] == "healthy"
 
 @pytest.mark.e2e
-def test_ready(): assert r.get(f"{BASE}/ready").status_code == 200
+def test_health():
+    # Given
+    # When
+    response = r.get(f"{BASE}/health")
+    # Then
+    assert response.json()["status"] == "healthy"
+
 
 @pytest.mark.e2e
-def test_create_job(): assert r.post(f"{BASE}/jobs", json={"tenant_id": "test", "payload": {}}).json()["status"] == "accepted"
+def test_ready():
+    # Given
+    # When
+    response = r.get(f"{BASE}/ready")
+    # Then
+    assert response.status_code == 200
+
 
 @pytest.mark.e2e
-def test_validation_empty(): assert r.post(f"{BASE}/jobs", json={"tenant_id": "", "payload": {}}).status_code == 422
+def test_create_job():
+    # Given
+    payload = {"tenant_id": "test", "payload": {}}
+    # When
+    response = r.post(f"{BASE}/jobs", json=payload)
+    # Then
+    assert response.json()["status"] == "accepted"
+
 
 @pytest.mark.e2e
-def test_validation_special_chars(): assert r.post(f"{BASE}/jobs", json={"tenant_id": "a@#!", "payload": {}}).status_code == 422
+def test_validation_empty():
+    # Given
+    payload = {"tenant_id": "", "payload": {}}
+    # When
+    response = r.post(f"{BASE}/jobs", json=payload)
+    # Then
+    assert response.status_code == 422
+
+
+@pytest.mark.e2e
+def test_validation_special_chars():
+    # Given
+    payload = {"tenant_id": "a@#!", "payload": {}}
+    # When
+    response = r.post(f"{BASE}/jobs", json=payload)
+    # Then
+    assert response.status_code == 422
