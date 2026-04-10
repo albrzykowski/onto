@@ -1,6 +1,6 @@
 """Job consumer."""
 import json, time, os, urllib.request, pulsar
-from app.config import PULSAR_URL
+from app.config import PULSAR_URL, PULSAR_ADMIN, TOPIC_PREFIX
 from app.logger import get_logger
 
 logger = get_logger(__name__)
@@ -22,8 +22,8 @@ class Consumer:
 
     def _topics(self):
         try:
-            with urllib.request.urlopen("http://localhost:8080/admin/v2/persistent/public/default", timeout=5) as r:
-                return [t for t in json.loads(r.read()) if "tenant-" in t]
+            with urllib.request.urlopen(f"{PULSAR_ADMIN}/admin/v2/persistent/public/default", timeout=5) as r:
+                return [t for t in json.loads(r.read()) if f"{TOPIC_PREFIX}/tenant-" in t]
         except: return []
 
     def _process(self, d): logger.info(f"Job: {d.get('job_id')} for {d.get('tenant_id')}")
