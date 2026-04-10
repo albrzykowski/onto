@@ -3,17 +3,14 @@ pythonpath = ["."]
 testpaths = ["tests"]
 markers = ["e2e: end-to-end tests requiring running services"]
 
-[tool.ruff]
-line-length = 100
-target-version = "py310"
-
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "N", "UP", "PL"]
 ignore = [
-    "E501",  # line too long
-    "E702",  # semicolons
-    "E722",  # bare except
-    "W292",  # no newline
+    "E501",  # line too long (we prefer readability over strict line-length enforcement)
+    "W292",  # missing newline at end of file (often handled automatically by formatters like Ruff or Black)
+    "E701",  # allow multiple statements on one line using semicolons
+    "E702",  # allow multiple statements on one line (semicolon)
+
 ]
 
 [tool.ruff.lint.pylint]
@@ -26,7 +23,7 @@ max-bool-expr = 2
 max-public-methods = 5
 
 [tool.mypy]
-python-version = "3.14"
+python-version = "3.10"
 warn_return_any = true
 warn_unused_configs = true
 disallow_untyped_defs = false

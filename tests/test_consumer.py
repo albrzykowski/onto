@@ -1,67 +1,92 @@
-"""Unit tests for consumer."""
-import json
+"""Unit tests for async consumer."""
+import asyncio
 from unittest.mock import MagicMock, patch
+
+import pulsar
 
 from app.queue.consumer import Consumer
 
-EXPECTED_TENANT_COUNT = 2
+
+def collect_messages(consumer, limit):
+    async def run():
+        msgs = []
+        count = 0
+        async for msg in consumer.messages():
+            if msg is not None:
+                msgs.append(msg)
+                count += 1
+            if count >= limit:
+                break
+        return msgs
+    return asyncio.run(run())
 
 
-class TestDiscoverTopics:
-    def test_returns_tenant_topics(self):
+class TestConsumer:
+    @patch("pulsar.Client")
+    def test_messages_yields_messages(self, mock_pulsar_client):
         # Given
-        topics = ["persistent://public/default/tenant-a", "persistent://public/default/tenant-b"]
-        with patch("urllib.request.urlopen") as mock:
-            mock.return_value.__enter__ = MagicMock(return_value=MagicMock(read=lambda: json.dumps(topics)))
-            mock.return_value.__exit__ = MagicMock(return_value=False)
+        mock_consumer = MagicMock()
+        mock_consumer.receive.return_value = MagicMock(
+            data=lambda: b'{"job_id": "123", "tenant_id": "tenant-a"}'
+        )
+        mock_pulsar_client.return_value.subscribe.return_value = mock_consumer
+        c = Consumer(poll_interval=0, max_iterations=1)
 
-            # When
-            c = Consumer()
-            result = c._topics()
+        # When
+        messages = collect_messages(c, 1)
 
-            # Then
-            assert result == topics
+        # Then
+        assert len(messages) == 1
+        assert messages[0]["job_id"] == "123"
 
-    def test_returns_empty_on_error(self):
+    @patch("pulsar.Client")
+    def test_messages_handles_timeout(self, mock_pulsar_client):
         # Given
-        with patch("urllib.request.urlopen", side_effect=Exception("no network")):
-            # When
-            c = Consumer()
-            result = c._topics()
+        mock_consumer = MagicMock()
+        mock_consumer.receive.side_effect = pulsar.Timeout()
+        mock_pulsar_client.return_value.subscribe.return_value = mock_consumer
+        c = Consumer(poll_interval=0, max_iterations=1)
 
-            # Then
-            assert result == []
+        # When
+        messages = collect_messages(c, 1)
 
+        # Then
+        assert len(messages) == 0
 
-class TestProcess:
-    def test_logs_job_info(self):
+    @patch("pulsar.Client")
+    def test_run_logs_messages(self, mock_pulsar_client):
         # Given
-        data = {"job_id": "123", "tenant_id": "tenant-a", "payload": {"task": "test"}}
+        mock_consumer = MagicMock()
+        mock_consumer.receive.return_value = MagicMock(
+            data=lambda: b'{"job_id": "123", "tenant_id": "tenant-a"}'
+        )
+        mock_pulsar_client.return_value.subscribe.return_value = mock_consumer
+        c = Consumer(poll_interval=0, max_iterations=1)
+
         with patch("app.queue.consumer.logger") as mock_log:
             # When
-            c = Consumer()
-            c._process(data)
+            asyncio.run(c.run())
 
             # Then
-            mock_log.info.assert_called_once()
+            mock_log.info.assert_called()
 
-
-class TestTopicFiltering:
-    def test_filters_non_tenant_topics(self):
+    def test_close(self):
         # Given
-        topics = [
-            "persistent://public/default/tenant-a",
-            "persistent://public/default/other-topic",
-            "persistent://public/default/tenant-b",
-        ]
-        with patch("urllib.request.urlopen") as mock:
-            mock.return_value.__enter__ = MagicMock(return_value=MagicMock(read=lambda: json.dumps(topics)))
-            mock.return_value.__exit__ = MagicMock(return_value=False)
+        c = Consumer()
+        c.client = MagicMock()
 
-            # When
-            c = Consumer()
-            result = c._topics()
+        # When
+        c.close()
 
-            # Then
-            assert "persistent://public/default/other-topic" not in result
-            assert len(result) == EXPECTED_TENANT_COUNT
+        # Then
+        c.client.close.assert_called_once()
+
+    def test_close_handles_none_client(self):
+        # Given
+        c = Consumer()
+
+        # When
+        c.close()
+
+        # Then
+        # Should not raise
