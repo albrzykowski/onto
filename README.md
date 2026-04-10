@@ -1,16 +1,6 @@
 # Job Queue Service
 
-A minimal, production-ready job queue system using FastAPI and Apache Pulsar.
-
-## What it does
-
-```
-POST /jobs → Pulsar → Consumer → Process job
-```
-
-- Accepts job requests via HTTP POST
-- Publishes to tenant-specific Pulsar topics
-- Consumer dynamically discovers and processes all topics
+Minimal job queue with FastAPI + Pulsar.
 
 ## Quick Start
 
@@ -18,23 +8,18 @@ POST /jobs → Pulsar → Consumer → Process job
 # Start Pulsar
 docker run -d --name pulsar -p 6650:6650 -p 8080:8080 apachepulsar/pulsar:3.1.0 bin/pulsar standalone
 
-# Install dependencies
-pip install -r requirements.txt
-
 # Run
-python -m app.consumer &   # Job processor
-python -m app.main          # API server
+python -m app.queue.consumer &   # Consumer
+python -m app.main               # API server
 ```
 
-## API Endpoints
+## API
 
 | Endpoint | Description |
 |----------|-------------|
-| `GET /health` | Liveness check |
-| `GET /ready` | Readiness (Pulsar connection) |
+| `GET /health` | Liveness |
+| `GET /ready` | Pulsar ready |
 | `POST /jobs` | Create job |
-
-## Example
 
 ```bash
 curl -X POST http://localhost:8000/jobs \
@@ -42,59 +27,38 @@ curl -X POST http://localhost:8000/jobs \
   -d '{"tenant_id": "my-tenant", "payload": {"task": "process"}}'
 ```
 
-Response:
-```json
-{"status": "accepted", "tenant_id": "my-tenant"}
-```
+## Config
 
-## Configuration
+`PULSAR_URL`, `HOST`, `PORT`, `LOG_LEVEL` (env)
 
-Environment variables:
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `PULSAR_URL` | `pulsar://localhost:6650` | Pulsar broker URL |
-| `HOST` | `0.0.0.0` | Server host |
-| `PORT` | `8000` | Server port |
-| `LOG_LEVEL` | `INFO` | Logging level |
-
-## Testing
+## Tests
 
 ```bash
-pytest tests/ -v
+pytest tests/ -v        # 15 unit tests
+pytest tests_e2e/ -v    # 5 e2e (auto-skips if no server)
 ```
 
-- Unit tests: 17 (consumer, producer, routes)
-- E2E tests: 5 (requires running server + Pulsar)
-
-## Architecture
+## Structure
 
 ```
 app/
-├── api/routes.py      # FastAPI endpoints
-├── consumer.py        # Pulsar consumer (17 lines)
-├── queue/producer.py  # Pulsar producer (44 lines)
-├── schemas/job.py    # Pydantic models
-├── config.py         # Configuration
-└── logger.py         # Logging setup
+├── queue/
+│   ├── producer.py  (Producer class)
+│   └── consumer.py  (Consumer class)
+├── api/routes.py
+├── schemas/job.py
+├── config.py
+└── main.py
 
-tests/
-├── test_consumer.py
-├── test_producer.py
-├── test_routes.py
-└── e2e_test.py
+tests/           # unit tests
+tests_e2e/       # e2e tests
 ```
 
 ## Features
 
-- Auto-generated job IDs (UUID) for idempotency
+- Auto job ID (UUID) for idempotency
 - Retry logic on send failure
-- Dynamic topic discovery every 5 seconds
+- Dynamic topic discovery
 - Graceful shutdown
-- Health/readiness checks
+- Health checks
 - Input validation
-
-## Requirements
-
-- Python 3.10+
-- Pulsar broker
