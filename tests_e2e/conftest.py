@@ -14,7 +14,8 @@ def is_server_running(host="localhost", port=8000, timeout=1):
         sock.connect((host, port))
         sock.close()
         return True
-    except: return False
+    except Exception:
+        return False
 
 
 def pytest_collection_modifyitems(config, items):
