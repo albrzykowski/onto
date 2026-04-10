@@ -7,6 +7,14 @@ import pulsar
 from app.queue.consumer import Consumer
 
 
+class MockMessage:
+    def __init__(self, data):
+        self._data = data
+
+    def data(self):
+        return self._data
+
+
 def collect_messages(consumer, limit):
     async def run():
         msgs = []
@@ -26,8 +34,8 @@ class TestConsumer:
     def test_messages_yields_messages(self, mock_pulsar_client):
         # Given
         mock_consumer = MagicMock()
-        mock_consumer.receive.return_value = MagicMock(
-            data=lambda: b'{"job_id": "123", "tenant_id": "tenant-a"}'
+        mock_consumer.receive.return_value = MockMessage(
+            b'{"job_id": "123", "tenant_id": "tenant-a"}'
         )
         mock_pulsar_client.return_value.subscribe.return_value = mock_consumer
         c = Consumer(poll_interval=0, max_iterations=1)
@@ -57,8 +65,8 @@ class TestConsumer:
     def test_run_logs_messages(self, mock_pulsar_client):
         # Given
         mock_consumer = MagicMock()
-        mock_consumer.receive.return_value = MagicMock(
-            data=lambda: b'{"job_id": "123", "tenant_id": "tenant-a"}'
+        mock_consumer.receive.return_value = MockMessage(
+            b'{"job_id": "123", "tenant_id": "tenant-a"}'
         )
         mock_pulsar_client.return_value.subscribe.return_value = mock_consumer
         c = Consumer(poll_interval=0, max_iterations=1)
