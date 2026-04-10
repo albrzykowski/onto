@@ -2,13 +2,13 @@
 import socket
 from fastapi import APIRouter, HTTPException, status
 from app.schemas.job import JobRequest
-from app.queue.producer import QueueProducer
+from app.queue.producer import Producer
 from app.logger import get_logger
 from app.config import PULSAR_URL
 
 router = APIRouter()
 log = get_logger(__name__)
-producer = QueueProducer()
+producer = Producer()
 
 
 @router.get("/health")
