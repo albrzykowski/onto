@@ -11,13 +11,25 @@ class Consumer:
     def run(self):
         self.client = pulsar.Client(PULSAR_URL)
         while True:
-            for topic in self._topics():
-                if topic not in self.consumers: self.consumers[topic] = self.client.subscribe(topic, self.subscription)
-            for consumer in self.consumers.values():
-                try: msg = consumer.receive(1000); self._process(json.loads(msg.data())); consumer.acknowledge(msg)
-                except pulsar.Timeout: pass
-                except Exception as e: logger.error(f"Err: {e}")
+            self._subscribe_topics()
+            self._consume_messages()
             time.sleep(0.1)
+
+    def _subscribe_topics(self):
+        for topic in self._topics():
+            if topic not in self.consumers:
+                self.consumers[topic] = self.client.subscribe(topic, self.subscription)
+
+    def _consume_messages(self):
+        for consumer in self.consumers.values():
+            try:
+                msg = consumer.receive(1000)
+                self._process(json.loads(msg.data()))
+                consumer.acknowledge(msg)
+            except pulsar.Timeout:
+                pass
+            except Exception as e:
+                logger.error(f"Err: {e}")
 
     def _topics(self):
         try:
