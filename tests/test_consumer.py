@@ -1,7 +1,7 @@
 """Unit tests for consumer."""
 import json
 from unittest.mock import patch, MagicMock
-from app.consumer import get_topics, process
+from app.queue.consumer import get_topics, process
 
 
 class TestGetTopics:
@@ -22,7 +22,7 @@ class TestGetTopics:
 class TestProcess:
     def test_logs_job_info(self):
         data = {"job_id": "123", "tenant_id": "tenant-a", "payload": {"task": "test"}}
-        with patch("app.consumer.logger") as mock_log:
+        with patch("app.queue.consumer.logger") as mock_log:
             process(data)
             mock_log.info.assert_called_once()
 
