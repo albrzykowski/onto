@@ -30,7 +30,7 @@ def collect_messages(consumer, limit):
 
 
 class TestConsumer:
-    @patch("pulsar.Client")
+    @patch("app.queue.consumer.pulsar.Client")
     def test_messages_yields_messages(self, mock_pulsar_client):
         # Given
         mock_consumer = MagicMock()
@@ -39,6 +39,7 @@ class TestConsumer:
         )
         mock_pulsar_client.return_value.subscribe.return_value = mock_consumer
         c = Consumer(poll_interval=0, max_iterations=1)
+        c._topics = MagicMock(return_value=["persistent://public/default/tenant-a"])
 
         # When
         messages = collect_messages(c, 1)
@@ -47,13 +48,14 @@ class TestConsumer:
         assert len(messages) == 1
         assert messages[0]["job_id"] == "123"
 
-    @patch("pulsar.Client")
+    @patch("app.queue.consumer.pulsar.Client")
     def test_messages_handles_timeout(self, mock_pulsar_client):
         # Given
         mock_consumer = MagicMock()
         mock_consumer.receive.side_effect = pulsar.Timeout()
         mock_pulsar_client.return_value.subscribe.return_value = mock_consumer
         c = Consumer(poll_interval=0, max_iterations=1)
+        c._topics = MagicMock(return_value=["persistent://public/default/tenant-a"])
 
         # When
         messages = collect_messages(c, 1)
@@ -61,7 +63,7 @@ class TestConsumer:
         # Then
         assert len(messages) == 0
 
-    @patch("pulsar.Client")
+    @patch("app.queue.consumer.pulsar.Client")
     def test_run_logs_messages(self, mock_pulsar_client):
         # Given
         mock_consumer = MagicMock()
@@ -70,6 +72,7 @@ class TestConsumer:
         )
         mock_pulsar_client.return_value.subscribe.return_value = mock_consumer
         c = Consumer(poll_interval=0, max_iterations=1)
+        c._topics = MagicMock(return_value=["persistent://public/default/tenant-a"])
 
         with patch("app.queue.consumer.logger") as mock_log:
             # When
