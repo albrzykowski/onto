@@ -1,7 +1,10 @@
 """Unit tests for consumer."""
 import json
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
+
 from app.queue.consumer import Consumer
+
+EXPECTED_TENANT_COUNT = 2
 
 
 class TestDiscoverTopics:
@@ -61,4 +64,4 @@ class TestTopicFiltering:
 
             # Then
             assert "persistent://public/default/other-topic" not in result
-            assert len(result) == 2
+            assert len(result) == EXPECTED_TENANT_COUNT

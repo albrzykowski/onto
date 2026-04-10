@@ -1,5 +1,6 @@
 import logging
 import sys
+
 from app.config import LOG_LEVEL
 
 logging.basicConfig(

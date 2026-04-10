@@ -1,5 +1,11 @@
-import json, time, os, urllib.request, pulsar
-from app.config import PULSAR_URL, PULSAR_ADMIN, TOPIC_PREFIX
+import json
+import os
+import time
+import urllib.request
+
+import pulsar
+
+from app.config import PULSAR_ADMIN, PULSAR_URL, TOPIC_PREFIX
 from app.logger import get_logger
 
 logger = get_logger(__name__)

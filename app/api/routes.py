@@ -1,10 +1,12 @@
 """API routes."""
 import socket
+
 from fastapi import APIRouter, HTTPException, status
-from app.schemas.job import JobRequest
-from app.queue.producer import Producer
-from app.logger import get_logger
+
 from app.config import PULSAR_URL, TOPIC_PREFIX
+from app.logger import get_logger
+from app.queue.producer import Producer
+from app.schemas.job import JobRequest
 
 router = APIRouter()
 log = get_logger(__name__)
