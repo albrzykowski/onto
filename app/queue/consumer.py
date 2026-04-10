@@ -1,4 +1,3 @@
-"""Job consumer."""
 import json, time, os, urllib.request, pulsar
 from app.config import PULSAR_URL, PULSAR_ADMIN, TOPIC_PREFIX
 from app.logger import get_logger
