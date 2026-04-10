@@ -2,6 +2,9 @@
 
 Minimal job queue with FastAPI + Pulsar.
 
+![Ruff](https://github.com/albrzykowski/onto/actions/workflows/lint.yml/badge.svg)
+![Tests](https://github.com/albrzykowski/onto/actions/workflows/tests.yml/badge.svg)
+
 ## Quick Start
 
 ```bash
