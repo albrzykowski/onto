@@ -1,4 +1,3 @@
-"""Job producer."""
 import json, time, pulsar
 from app.config import PULSAR_URL
 from app.logger import get_logger

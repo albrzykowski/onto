@@ -15,11 +15,11 @@ python -m app.main
 
 ## API
 
-| Endpoint | Description |
-|----------|-------------|
-| `GET /health` | Liveness |
-| `GET /ready` | Pulsar ready |
-| `POST /jobs` | Create job |
+| Endpoint      | Description  |
+|---------------|--------------|
+| `GET /health` | Liveness     |
+| `GET /ready`  | Pulsar ready |
+| `POST /jobs`  | Create job   |
 
 ```bash
 curl -X POST http://localhost:8000/jobs \
@@ -29,14 +29,14 @@ curl -X POST http://localhost:8000/jobs \
 
 ## Config (env)
 
-| Variable | Default |
-|----------|---------|
-| `PULSAR_URL` | `pulsar://localhost:6650` |
-| `PULSAR_ADMIN` | `http://localhost:8080` |
+| Variable       | Default                       |
+|----------------|-------------------------------|
+| `PULSAR_URL`   | `pulsar://localhost:6650`     |
+| `PULSAR_ADMIN` | `http://localhost:8080`       |
 | `TOPIC_PREFIX` | `persistent://public/default` |
-| `HOST` | `0.0.0.0` |
-| `PORT` | `8000` |
-| `LOG_LEVEL` | `INFO` |
+| `HOST`         | `0.0.0.0`                     |
+| `PORT`         | `8000`                        |
+| `LOG_LEVEL`    | `INFO`                        |
 
 ## Tests
 

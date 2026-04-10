@@ -4,3 +4,5 @@ pydantic
 pulsar-client
 requests
 pytest
+ruff
+mypy
