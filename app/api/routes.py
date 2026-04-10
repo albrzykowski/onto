@@ -4,7 +4,7 @@ from fastapi import APIRouter, HTTPException, status
 from app.schemas.job import JobRequest
 from app.queue.producer import Producer
 from app.logger import get_logger
-from app.config import PULSAR_URL
+from app.config import PULSAR_URL, TOPIC_PREFIX
 
 router = APIRouter()
 log = get_logger(__name__)
@@ -29,7 +29,7 @@ def ready():
 @router.post("/jobs")
 def create_job(job: JobRequest):
     try:
-        topic = f"persistent://public/default/tenant-{job.tenant_id}"
+        topic = f"{TOPIC_PREFIX}/tenant-{job.tenant_id}"
         producer.send(topic=topic, msg=job.model_dump())
         return {"status": "accepted", "tenant_id": job.tenant_id}
     except Exception as e:
