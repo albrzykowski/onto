@@ -2,3 +2,5 @@ fastapi
 uvicorn
 pydantic
 pulsar-client
+requests
+pytest
