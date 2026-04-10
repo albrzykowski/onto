@@ -2,88 +2,127 @@
 import json
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 from app.queue.producer import Producer
 
+EXPECTED_RETRY_COUNT = 3
 
-class TestSend:
-    def test_encodes_json(self):
+
+class TestProducer:
+    @patch("pulsar.Client")
+    def test_send_encodes_json(self, mock_pulsar_client):
         # Given
-        with patch("pulsar.Client") as mock_client:
-            mock_producer = MagicMock()
-            mock_client.return_value.create_producer.return_value = mock_producer
-            p = Producer()
-            p.client = mock_client.return_value
+        mock_producer = MagicMock()
+        mock_pulsar_client.return_value.create_producer.return_value = mock_producer
 
-            # When
-            p.send("topic-test", {"key": "value"})
+        p = Producer()
+        p.client = mock_pulsar_client.return_value
 
-            # Then
-            call_args = mock_producer.send.call_args[0][0]
-            assert json.loads(call_args) == {"key": "value"}
+        # When
+        result = p.send("topic-test", {"key": "value"})
 
-    def test_calls_connect_when_not_connected(self):
+        # Then
+        call_args = mock_producer.send.call_args[0][0]
+        assert json.loads(call_args) == {"key": "value"}
+        assert result is not None
+
+    @patch("pulsar.Client")
+    def test_send_creates_client_when_not_connected(self, mock_pulsar_client):
         # Given
-        with patch("pulsar.Client") as mock_client:
-            mock_producer = MagicMock()
-            mock_client.return_value.create_producer.return_value = mock_producer
-            p = Producer()
+        mock_producer = MagicMock()
+        mock_pulsar_client.return_value.create_producer.return_value = mock_producer
 
-            # When
+        p = Producer()
+
+        # When
+        p.send("topic-test", {"test": 1})
+
+        # Then
+        assert p.client is not None
+
+    @patch("pulsar.Client")
+    def test_send_retries_on_failure(self, mock_pulsar_client):
+        # Given
+        mock_producer = MagicMock()
+        mock_producer.send.side_effect = [Exception("fail"), Exception("fail"), MagicMock()]
+        mock_pulsar_client.return_value.create_producer.return_value = mock_producer
+
+        p = Producer()
+        p.client = mock_pulsar_client.return_value
+
+        # When
+        result = p.send("topic-test", {"test": 1})
+
+        # Then
+        assert mock_producer.send.call_count == EXPECTED_RETRY_COUNT
+        assert result is not None
+
+    @patch("pulsar.Client")
+    def test_send_raises_after_max_retries(self, mock_pulsar_client):
+        # Given
+        mock_producer = MagicMock()
+        mock_producer.send.side_effect = Exception("fail")
+        mock_pulsar_client.return_value.create_producer.return_value = mock_producer
+
+        p = Producer()
+        p.client = mock_pulsar_client.return_value
+
+        # When
+        # Then
+        with pytest.raises(Exception) as exc_info:
             p.send("topic-test", {"test": 1})
+        assert str(exc_info.value) == "Send failed"
 
-            # Then
-            assert p.client is not None
-
-
-class TestGetProducer:
-    def test_creates_new_producer(self):
+    @patch("pulsar.Client")
+    def test_get_producer_creates_new(self, mock_pulsar_client):
         # Given
-        with patch("pulsar.Client") as mock_client:
-            mock_producer = MagicMock()
-            mock_client.return_value.create_producer.return_value = mock_producer
-            p = Producer()
-            p.client = mock_client.return_value
+        mock_producer = MagicMock()
+        mock_pulsar_client.return_value.create_producer.return_value = mock_producer
 
-            # When
-            prod = p._get_producer("topic-test")
+        p = Producer()
+        p.client = mock_pulsar_client.return_value
 
-            # Then
-            assert prod == mock_producer
-            mock_client.return_value.create_producer.assert_called_with("topic-test")
+        # When
+        prod = p.get_producer("topic-test")
 
-    def test_reuses_existing_producer(self):
+        # Then
+        assert prod == mock_producer
+        mock_pulsar_client.return_value.create_producer.assert_called_with("topic-test")
+
+    @patch("pulsar.Client")
+    def test_get_producer_reuses_existing(self, mock_pulsar_client):
         # Given
-        with patch("pulsar.Client") as mock_client:
-            mock_producer = MagicMock()
-            p = Producer()
-            p.client = mock_client.return_value
-            p.producers["topic-test"] = mock_producer
+        mock_producer = MagicMock()
+        p = Producer()
+        p.client = mock_pulsar_client.return_value
+        p.producers["topic-test"] = mock_producer
 
-            # When
-            prod = p._get_producer("topic-test")
+        # When
+        prod = p.get_producer("topic-test")
 
-            # Then
-            assert prod == mock_producer
-            mock_client.return_value.create_producer.assert_not_called()
+        # Then
+        assert prod == mock_producer
+        mock_pulsar_client.return_value.create_producer.assert_not_called()
 
-
-class TestClose:
-    def test_closes_client(self):
+    @patch("pulsar.Client")
+    def test_close_closes_client(self, mock_pulsar_client):
         # Given
-        with patch("pulsar.Client") as mock_client:
-            p = Producer()
-            p.client = mock_client.return_value
+        p = Producer()
+        p.client = mock_pulsar_client.return_value
 
-            # When
-            p.close()
+        # When
+        p.close()
 
-            # Then
-            mock_client.return_value.close.assert_called_once()
+        # Then
+        mock_pulsar_client.return_value.close.assert_called_once()
 
-    def test_handles_none_client(self):
+    def test_close_handles_none_client(self):
         # Given
         p = Producer()
 
         # When
-        # Then
         p.close()
+
+        # Then
+        # Should not raise
