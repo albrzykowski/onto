@@ -18,16 +18,16 @@ python -m app.main
 
 ## API
 
-| Endpoint      | Description  |
-|---------------|--------------|
-| `GET /health` | Liveness     |
-| `GET /ready`  | Pulsar ready |
-| `POST /jobs`  | Create job   |
+| Endpoint         | Description      |
+|-----------------|------------------|
+| `GET /health`   | Liveness         |
+| `GET /ready`    | Pulsar ready      |
+| `POST /documents` | Create document |
 
 ```bash
-curl -X POST http://localhost:8000/jobs \
+curl -X POST http://localhost:8000/documents \
   -H "Content-Type: application/json" \
-  -d '{"tenant_id": "my-tenant", "payload": {"task": "process"}}'
+  -d '{"tenant_id": "my-tenant", "content": "text content here"}'
 ```
 
 ## Config (env)
@@ -44,8 +44,26 @@ curl -X POST http://localhost:8000/jobs \
 ## Tests
 
 ```bash
-pytest tests/ -v        # 15 unit tests
-pytest tests_e2e/ -v    # 5 e2e (auto-skips if no server)
+# Unit tests (no external deps required)
+pytest tests/ -v        # 18 unit tests
+
+# E2E tests (requires Pulsar + API running)
+pytest tests_e2e/ -v    # 7 e2e
+```
+
+### E2E Test Environment
+
+Start services manually:
+```bash
+# Option 1: Docker
+docker run -d --name pulsar -p 6650:6650 -p 8080:8080 apachepulsar/pulsar:3.1.0
+python -m app.queue.consumer &
+python -m app.main
+
+# Option 2: docker-compose (if available)
+docker compose -f docker-compose.e2e.yml up -d
+pytest tests_e2e/ -v
+docker compose -f docker-compose.e2e.yml down
 ```
 
 ## Structure
@@ -56,14 +74,13 @@ app/
 │   ├── producer.py  # Producer class
 │   └── consumer.py  # Consumer class
 ├── api/routes.py
-├── schemas/job.py
+├── schemas/document.py
 ├── config.py
 └── main.py
 ```
 
 ## Features
 
-- Auto job ID (UUID) for idempotency
 - Retry logic on send failure
 - Dynamic topic discovery
 - Configurable Pulsar admin URL

@@ -9,12 +9,11 @@ ruff check app/
 # Typecheck
 mypy app/
 
-# Test (15 unit tests)
+# Unit tests
 pytest tests/ -v
 
-# Run (requires Pulsar running)
-docker-compose up -d  # or: docker run -d --name pulsar -p 6650:6650 -p 8080:8080 apachepulsar/pulsar:3.1.0 bin/pulsar standalone
-python -m app.main
+# E2E tests (requires services)
+pytest tests_e2e/ -v
 ```
 
 ## Run Order
@@ -34,13 +33,14 @@ Consumer must start before API (or concurrently): `python -m app.queue.consumer 
 ## Architecture
 
 - Entry: `app/main.py` (FastAPI app)
-- API: `app/api/routes.py` (POST /jobs, GET /health, GET /ready)
+- API: `app/api/routes.py` (POST /documents, GET /health, GET /ready)
 - Queue: `app/queue/producer.py`, `app/queue/consumer.py`
+- Pipeline: `app/pipeline/ontology_pipeline.py`
 - Config: `app/config.py`
 
 ## Testing
 
-- E2E tests exist in `tests_e2e/` (auto-skips if no server)
+- E2E tests exist in `tests_e2e/` (requires server running)
 - Use marker `@pytest.mark.e2e` for end-to-end tests
 
 ## Notes

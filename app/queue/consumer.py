@@ -7,6 +7,7 @@ import pulsar
 
 from app.config import PULSAR_ADMIN, PULSAR_URL, TOPIC_PREFIX
 from app.logger import get_logger
+from app.pipeline.ontology_pipeline import OntologyPipeline
 
 logger = get_logger(__name__)
 
@@ -25,9 +26,11 @@ class Consumer:
         await self._subscribe_topics()
         if self.max_iterations:
             for _ in range(self.max_iterations):
+                await self._subscribe_topics()
                 yield await self._consume_message()
         else:
             while True:
+                await self._subscribe_topics()
                 yield await self._consume_message()
 
     async def _subscribe_topics(self):
@@ -38,7 +41,7 @@ class Consumer:
     async def _consume_message(self):
         for consumer in self.consumers.values():
             try:
-                msg = consumer.receive(1000)
+                msg = consumer.receive(200)
                 data = json.loads(msg.data())
                 consumer.acknowledge(msg)
                 return data
@@ -56,9 +59,18 @@ class Consumer:
             return []
 
     async def run(self):
+        pipeline = OntologyPipeline()
         async for msg in self.messages():
-            logger.info(f"Document for tenant: {msg.get('tenant_id')}")
+            if not msg:
+                continue
+            logger.info(f"Processing document for tenant: {msg.get('tenant_id')}")
+            await pipeline.process(msg)
 
     def close(self):
         if self.client:
             self.client.close()
+
+
+if __name__ == "__main__":
+    import asyncio
+    asyncio.run(Consumer().run())
