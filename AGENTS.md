@@ -43,6 +43,20 @@ Consumer must start before API (or concurrently): `python -m app.queue.consumer 
 - E2E tests exist in `tests_e2e/` (requires server running)
 - Use marker `@pytest.mark.e2e` for end-to-end tests
 
+## Test Conventions
+
+- Always use #Given #When #Then comments in tests
+- Example:
+  ```python
+  def test_example():
+      # Given
+      ...
+      # When
+      ...
+      # Then
+      ...
+  ```
+
 ## Notes
 
 - mypy configured for Python 3.10 but runs on 3.14 locally (compatibility OK)
