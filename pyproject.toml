@@ -2,6 +2,7 @@
 pythonpath = ["."]
 testpaths = ["tests"]
 markers = ["e2e: end-to-end tests requiring running services"]
+asyncio_mode = "auto"
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "N", "UP", "PL"]

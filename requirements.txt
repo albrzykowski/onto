@@ -6,5 +6,6 @@ requests
 python-dotenv
 openai
 pytest
+pytest-asyncio
 ruff
 mypy
