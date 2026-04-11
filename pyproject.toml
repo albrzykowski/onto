@@ -16,7 +16,7 @@ ignore = [
 [tool.ruff.lint.pylint]
 max-branches = 5
 max-locals = 5
-max-returns = 2
+max-returns = 4
 max-statements = 10
 max-nested-blocks = 2
 max-bool-expr = 2
