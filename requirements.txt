@@ -3,6 +3,8 @@ uvicorn
 pydantic
 pulsar-client
 requests
+python-dotenv
+openai
 pytest
 ruff
 mypy
