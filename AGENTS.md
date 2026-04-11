@@ -39,14 +39,6 @@ Consumer must start before API (or concurrently): `python -m app.queue.consumer 
 | HOST | 0.0.0.0 |
 | PORT | 8000 |
 
-## Architecture
-
-- Entry: `app/main.py` (FastAPI app)
-- API: `app/api/routes.py` (POST /documents, GET /health, GET /ready)
-- Queue: `app/queue/producer.py`, `app/queue/consumer.py`
-- Pipeline: `app/pipeline/llm_processor.py`
-- Config: `app/config.py`
-
 ## Testing
 
 - E2E tests exist in `tests_e2e/` (requires server running)
