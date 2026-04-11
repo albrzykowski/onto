@@ -32,7 +32,7 @@ class OntologyPipeline:
                 content=content,
                 summary="",
                 success=False,
-                error="Empty content" if content else "OPENAI_API_KEY not configured"
+                error="Empty content" if not content else "OPENAI_API_KEY not configured"
             )
 
         response = self.client.responses.create(
