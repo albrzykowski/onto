@@ -9,6 +9,22 @@ pytest tests/ tests_e2e/ -v && ruff check app/
 
 **Always run these after code changes to verify correctness.**
 
+## Commit Messages
+
+Follow Conventional Commits format:
+```
+<type>: <description>
+
+Types: feat, fix, test, refactor, docs, chore, style, perf, ci, build, revert
+```
+
+Examples:
+- `feat: add new endpoint for documents`
+- `fix: resolve API key not loading`
+- `test: add unit tests for LLMProcessor`
+- `docs: update README with setup instructions`
+- `chore: add pytest-asyncio dependency`
+
 ## Run Order
 
 Consumer must start before API (or concurrently): `python -m app.queue.consumer & python -m app.main`
