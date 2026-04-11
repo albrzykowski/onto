@@ -6,7 +6,7 @@ from fastapi import APIRouter, HTTPException, status
 from app.config import PULSAR_URL, TOPIC_PREFIX
 from app.logger import get_logger
 from app.queue.producer import Producer
-from app.schemas.job import JobRequest
+from app.schemas.document import DocumentRequest
 
 router = APIRouter()
 log = get_logger(__name__)
@@ -28,12 +28,12 @@ def ready():
         raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, detail={"status": "not ready", "error": str(e)})
 
 
-@router.post("/jobs")
-def create_job(job: JobRequest):
+@router.post("/documents")
+def create_document(doc: DocumentRequest):
     try:
-        topic = f"{TOPIC_PREFIX}/tenant-{job.tenant_id}"
-        producer.send(topic=topic, msg=job.model_dump())
-        return {"status": "accepted", "tenant_id": job.tenant_id}
+        topic = f"{TOPIC_PREFIX}/tenant-{doc.tenant_id}"
+        producer.send(topic=topic, msg=doc.model_dump())
+        return {"status": "accepted", "tenant_id": doc.tenant_id}
     except Exception as e:
         log.error(f"Failed: {e}")
         raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, detail={"status": "failed", "error": str(e)})
