@@ -3,18 +3,11 @@
 ## Commands
 
 ```bash
-# Lint
-ruff check app/
-
-# Typecheck
-mypy app/
-
-# Unit tests
-pytest tests/ -v
-
-# E2E tests (requires services)
-pytest tests_e2e/ -v
+# Run all tests and lint
+pytest tests/ tests_e2e/ -v && ruff check app/
 ```
+
+**Always run these after code changes to verify correctness.**
 
 ## Run Order
 
