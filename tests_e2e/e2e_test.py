@@ -34,6 +34,23 @@ def consumer_output():
     thread.join(timeout=1)
 
 
+@pytest.fixture(autouse=True, scope="module")
+def mock_llm():
+    import os
+    if os.getenv("MOCK_LLM"):
+        from unittest.mock import AsyncMock, MagicMock
+        from app.pipeline import llm_processor
+
+        async def mock_process(self, text):
+            return llm_processor.LLMResponse(
+                content=f"Mocked LLM response for: {text[:30]}",
+                success=True
+            )
+
+        llm_processor.LLMProcessor.process = mock_process
+    yield
+
+
 @pytest.mark.e2e
 def test_health():
     # Given
@@ -99,8 +116,8 @@ def test_document_processed_by_consumer(precreated_topic, consumer_output):
 @pytest.mark.e2e
 def test_document_processed_by_pipeline(precreated_topic, consumer_output):
     import os
-    if not os.getenv("OPENAI_API_KEY"):
-        pytest.skip("OPENAI_API_KEY not set")
+    if not os.getenv("OPENAI_API_KEY") and not os.getenv("MOCK_LLM"):
+        pytest.skip("OPENAI_API_KEY not set and MOCK_LLM not enabled")
     # Given
     payload = {"tenant_id": precreated_topic, "content": "pipeline test content"}
     # When
