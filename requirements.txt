@@ -9,3 +9,4 @@ pytest
 pytest-asyncio
 ruff
 mypy
+python-semantic-release
