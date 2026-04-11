@@ -26,11 +26,11 @@ def test_ready():
 
 
 @pytest.mark.e2e
-def test_create_job():
+def test_create_document():
     # Given
-    payload = {"tenant_id": "test", "payload": {}}
+    payload = {"tenant_id": "test", "content": "hello world"}
     # When
-    response = r.post(f"{BASE}/jobs", json=payload)
+    response = r.post(f"{BASE}/documents", json=payload)
     # Then
     assert response.json()["status"] == "accepted"
 
@@ -38,9 +38,9 @@ def test_create_job():
 @pytest.mark.e2e
 def test_validation_empty():
     # Given
-    payload = {"tenant_id": "", "payload": {}}
+    payload = {"tenant_id": "", "content": "test"}
     # When
-    response = r.post(f"{BASE}/jobs", json=payload)
+    response = r.post(f"{BASE}/documents", json=payload)
     # Then
     assert response.status_code == STATUS_UNPROCESSABLE_ENTITY
 
@@ -48,8 +48,8 @@ def test_validation_empty():
 @pytest.mark.e2e
 def test_validation_special_chars():
     # Given
-    payload = {"tenant_id": "a@#!", "payload": {}}
+    payload = {"tenant_id": "a@#!", "content": "test"}
     # When
-    response = r.post(f"{BASE}/jobs", json=payload)
+    response = r.post(f"{BASE}/documents", json=payload)
     # Then
     assert response.status_code == STATUS_UNPROCESSABLE_ENTITY

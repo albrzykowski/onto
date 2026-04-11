@@ -3,8 +3,8 @@ from unittest.mock import MagicMock, patch
 
 from fastapi import HTTPException
 
-from app.api.routes import create_job, health, ready
-from app.schemas.job import JobRequest
+from app.api.routes import create_document, health, ready
+from app.schemas.document import DocumentRequest
 
 STATUS_SERVICE_UNAVAILABLE = 503
 STATUS_INTERNAL_SERVER_ERROR = 500
@@ -46,14 +46,14 @@ class TestReady:
             assert e.status_code == STATUS_SERVICE_UNAVAILABLE
 
 
-class TestCreateJob:
+class TestCreateDocument:
     @patch("app.api.routes.producer")
     def test_returns_accepted(self, mock_producer):
         # Given
         mock_producer.send.return_value = True
-        job = JobRequest(tenant_id="test", payload={"task": 1})
+        doc = DocumentRequest(tenant_id="test", content="hello world")
         # When
-        result = create_job(job)
+        result = create_document(doc)
         # Then
         assert result["status"] == "accepted"
         mock_producer.send.assert_called_once()
@@ -64,8 +64,8 @@ class TestCreateJob:
         mock_producer.send.side_effect = Exception("fail")
         try:
             # When
-            job = JobRequest(tenant_id="test", payload={"task": 1})
-            create_job(job)
+            doc = DocumentRequest(tenant_id="test", content="hello world")
+            create_document(doc)
         except HTTPException as e:
             # Then
             assert e.status_code == STATUS_INTERNAL_SERVER_ERROR

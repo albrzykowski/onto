@@ -57,7 +57,7 @@ class Consumer:
 
     async def run(self):
         async for msg in self.messages():
-            logger.info(f"Job for tenant: {msg.get('tenant_id')}")
+            logger.info(f"Document for tenant: {msg.get('tenant_id')}")
 
     def close(self):
         if self.client:
