@@ -1,6 +1,6 @@
-# Job Queue Service
+# on:to
 
-Minimal job queue with FastAPI + Pulsar.
+Production ready pipeline to create ontology based on documents provided via REST API
 
 ![Ruff](https://github.com/albrzykowski/onto/actions/workflows/lint.yml/badge.svg)
 ![Tests](https://github.com/albrzykowski/onto/actions/workflows/tests.yml/badge.svg)
