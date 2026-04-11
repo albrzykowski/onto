@@ -64,7 +64,11 @@ class Consumer:
             if not msg:
                 continue
             logger.info(f"Processing document for tenant: {msg.get('tenant_id')}")
-            await pipeline.process(msg)
+            result = await pipeline.process(msg)
+            if result.success:
+                logger.info(f"Summary: {result.summary[:100]}...")
+            else:
+                logger.error(f"Failed: {result.error}")
 
     def close(self):
         if self.client:
