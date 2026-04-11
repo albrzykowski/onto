@@ -35,7 +35,7 @@ Consumer must start before API (or concurrently): `python -m app.queue.consumer 
 - Entry: `app/main.py` (FastAPI app)
 - API: `app/api/routes.py` (POST /documents, GET /health, GET /ready)
 - Queue: `app/queue/producer.py`, `app/queue/consumer.py`
-- Pipeline: `app/pipeline/ontology_pipeline.py`
+- Pipeline: `app/pipeline/llm_processor.py`
 - Config: `app/config.py`
 
 ## Testing
