@@ -74,6 +74,8 @@ app/
 │   ├── producer.py  # Producer class
 │   └── consumer.py  # Consumer class
 ├── api/routes.py
+├── pipeline/
+│   └── llm_processor.py  # LLMProcessor class
 ├── schemas/document.py
 ├── config.py
 └── main.py
