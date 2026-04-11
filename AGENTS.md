@@ -62,3 +62,9 @@ Consumer must start before API (or concurrently): `python -m app.queue.consumer 
 
 - mypy configured for Python 3.10 but runs on 3.14 locally (compatibility OK)
 - Ruff pylint rules enforce strict complexity (max-branches=5, max-locals=5, etc.)
+
+## Interaction Rules
+
+- When asked a question, answer first before making any code changes
+- Ask for confirmation before modifying code or committing
+- Example: "It's duplicate in README. Want me to remove it?"
