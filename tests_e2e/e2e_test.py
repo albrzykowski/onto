@@ -98,6 +98,9 @@ def test_document_processed_by_consumer(precreated_topic, consumer_output):
 
 @pytest.mark.e2e
 def test_document_processed_by_pipeline(precreated_topic, consumer_output):
+    import os
+    if not os.getenv("OPENAI_API_KEY"):
+        pytest.skip("OPENAI_API_KEY not set")
     # Given
     payload = {"tenant_id": precreated_topic, "content": "pipeline test content"}
     # When
