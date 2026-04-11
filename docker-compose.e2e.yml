@@ -25,8 +25,10 @@ services:
       pulsar:
         condition: service_healthy
     environment:
-      - PULSAR_URL=pulsar://localhost:6650
-      - PULSAR_ADMIN=http://localhost:8080
+      - PULSAR_URL=pulsar://pulsar:6650
+      - PULSAR_ADMIN=http://pulsar:8080
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 5s
