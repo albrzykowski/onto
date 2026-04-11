@@ -108,4 +108,4 @@ def test_document_processed_by_pipeline(precreated_topic, consumer_output):
     time.sleep(4)
     # Then
     output_text = "".join(consumer_output)
-    assert f"Document for tenant: {precreated_topic}" in output_text
+    assert f"Processing document for tenant: {precreated_topic}" in output_text

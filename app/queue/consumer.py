@@ -7,7 +7,7 @@ import pulsar
 
 from app.config import PULSAR_ADMIN, PULSAR_URL, TOPIC_PREFIX
 from app.logger import get_logger
-from app.pipeline.ontology_pipeline import OntologyPipeline
+from app.pipeline.llm_processor import LLMProcessor
 
 logger = get_logger(__name__)
 
@@ -59,14 +59,14 @@ class Consumer:
             return []
 
     async def run(self):
-        pipeline = OntologyPipeline()
+        processor = LLMProcessor()
         async for msg in self.messages():
             if not msg:
                 continue
             logger.info(f"Processing document for tenant: {msg.get('tenant_id')}")
-            result = await pipeline.process(msg)
+            result = await processor.process(msg.get("content", ""))
             if result.success:
-                logger.info(f"Summary: {result.summary[:100]}...")
+                logger.info(f"Summary: {result.content[:100]}...")
             else:
                 logger.error(f"Failed: {result.error}")
 
