@@ -32,5 +32,4 @@ disallow_untyped_defs = false
 [tool.semantic_release]
 version_variable = "app/__init__.py:__version__"
 branch = "main"
-build_cmd = "pip install -e ."
 changelog_file = "CHANGELOG.md"
