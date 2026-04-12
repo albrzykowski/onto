@@ -1,5 +1,4 @@
 """E2E API tests."""
-import time
 
 import pytest
 import requests as r

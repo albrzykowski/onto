@@ -1,3 +1,4 @@
+import json
 import os
 from dataclasses import dataclass
 
@@ -9,9 +10,46 @@ load_dotenv()
 
 @dataclass
 class LLMResponse:
-    content: str
+    content: dict
     success: bool
     error: str | None = None
+
+
+ONTOLOGY_PROMPT = """
+You are an ontology learning system that extracts knowledge graphs from text.
+
+Your task is to extract structured semantic information.
+
+Return ONLY valid JSON. No explanations, no markdown, no extra text.
+
+Schema:
+{
+  "entities": [
+    {
+      "id": "string",
+      "label": "string",
+      "type": "Person | Organization | Location | Event | Concept | Product | Other"
+    }
+  ],
+  "relations": [
+    {
+      "subject": "entity_id",
+      "predicate": "string",
+      "object": "entity_id"
+    }
+  ]
+}
+
+Rules:
+- Every entity must have a unique id (E1, E2, E3...)
+- Use canonical labels (e.g. "OpenAI", not variants)
+- Relations must reference entity IDs, not raw text
+- Use simple predicates: works_for, located_in, part_of, uses, creates, causes, related_to
+- If nothing is found, return empty lists
+- Ensure JSON is valid and parsable
+
+Text:
+"""
 
 
 class LLMProcessor:
@@ -22,15 +60,26 @@ class LLMProcessor:
 
     async def process(self, text: str) -> LLMResponse:
         if not text:
-            return LLMResponse(content="", success=False, error="Empty text")
+            return LLMResponse(content={}, success=False, error="Empty text")
+
         if not self._client:
-            return LLMResponse(content="", success=False, error="OPENAI_API_KEY not set")
+            return LLMResponse(content={}, success=False, error="OPENAI_API_KEY not set")
 
         try:
             response = self._client.responses.create(
                 model=self.model,
-                input=f"What is this text about?\n\n{text}"
+                input=ONTOLOGY_PROMPT + text
             )
-            return LLMResponse(content=response.output[0].content[0].text, success=True)
+
+            raw = response.output[0].content[0].text
+
+            # safe JSON parsing
+            data = json.loads(raw)
+
+            return LLMResponse(content=data, success=True)
+
+        except json.JSONDecodeError as e:
+            return LLMResponse(content={}, success=False, error=f"Invalid JSON: {str(e)}")
+
         except Exception as e:
-            return LLMResponse(content="", success=False, error=str(e))
+            return LLMResponse(content={}, success=False, error=str(e))

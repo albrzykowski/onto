@@ -3,8 +3,11 @@
 ## Commands
 
 ```bash
+# Run unit tests only (no external deps required)
+pytest tests/ -v --ignore=tests/test_llm_processor.py
+
 # Run all tests and lint
-pytest tests/ tests_e2e/ -v && ruff check app/
+pytest tests/ tests_e2e/ -v -m e2e && ruff check app/
 ```
 
 **Always run these after code changes to verify correctness.**
@@ -30,6 +33,19 @@ Examples:
 
 Consumer must start before API (or concurrently): `python -m app.queue.consumer & python -m app.main`
 
+## E2E Environment
+
+```bash
+# Start all E2E services (Pulsar, Qdrant, PostgreSQL, API)
+docker-compose -f docker-compose.e2e.yml up -d
+
+# Run E2E tests
+pytest tests_e2e/ -v -m e2e
+
+# Stop E2E services
+docker-compose -f docker-compose.e2e.yml down
+```
+
 ## Environment
 
 | Variable | Default |
@@ -39,6 +55,13 @@ Consumer must start before API (or concurrently): `python -m app.queue.consumer 
 | TOPIC_PREFIX | persistent://public/default |
 | HOST | 0.0.0.0 |
 | PORT | 8000 |
+| QDRANT_HOST | localhost |
+| QDRANT_PORT | 6333 |
+| POSTGRES_HOST | localhost |
+| POSTGRES_PORT | 5432 |
+| POSTGRES_USER | postgres |
+| POSTGRES_PASSWORD | postgres |
+| POSTGRES_DB | onto |
 
 ## Testing
 

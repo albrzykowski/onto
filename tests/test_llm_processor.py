@@ -1,6 +1,7 @@
 """Unit tests for LLMProcessor."""
-import pytest
 from unittest.mock import MagicMock, patch
+
+import pytest
 
 from app.pipeline.llm_processor import LLMProcessor, LLMResponse
 

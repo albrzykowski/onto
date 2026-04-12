@@ -5,3 +5,5 @@ pulsar-client
 requests
 python-dotenv
 openai
+qdrant-client
+asyncpg

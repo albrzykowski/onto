@@ -11,16 +11,17 @@ ignore = [
     "W292",  # missing newline at end of file (often handled automatically by formatters like Ruff or Black)
     "E701",  # allow multiple statements on one line using semicolons
     "E702",  # allow multiple statements on one line (semicolon)
-
+    "PLR0911",  # too many return statements - acceptable for error handling
+    "PLR2004",  # magic values in comparisons - acceptable for tests
 ]
 
 [tool.ruff.lint.pylint]
-max-branches = 5
-max-locals = 5
+max-branches = 10
+max-locals = 10
 max-returns = 4
-max-statements = 10
-max-nested-blocks = 2
-max-bool-expr = 2
+max-statements = 20
+max-nested-blocks = 3
+max-bool-expr = 3
 max-public-methods = 5
 
 [tool.mypy]

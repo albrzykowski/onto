@@ -11,6 +11,39 @@ services:
       interval: 5s
       timeout: 5s
       retries: 15
+    networks:
+      - onto-e2e
+
+  qdrant:
+    image: qdrant/qdrant:latest
+    container_name: qdrant-e2e
+    ports:
+      - "6333:6333"
+      - "6334:6334"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:6333/collections"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      - onto-e2e
+
+  postgres:
+    image: postgres:15
+    container_name: postgres-e2e
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+      - POSTGRES_DB=onto
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d onto"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      - onto-e2e
 
   api:
     build:
@@ -22,9 +55,18 @@ services:
     depends_on:
       pulsar:
         condition: service_healthy
+      qdrant:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
     environment:
       - PULSAR_URL=pulsar://pulsar:6650
       - PULSAR_ADMIN=http://pulsar:8080
+      - QDRANT_HOST=qdrant
+      - POSTGRES_HOST=postgres
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+      - POSTGRES_DB=onto
     env_file:
       - .env
     extra_hosts:
@@ -34,3 +76,9 @@ services:
       interval: 5s
       timeout: 5s
       retries: 15
+    networks:
+      - onto-e2e
+
+networks:
+  onto-e2e:
+    driver: bridge

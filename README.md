@@ -40,6 +40,13 @@ curl -X POST http://localhost:8000/documents \
 | `HOST`         | `0.0.0.0`                     |
 | `PORT`         | `8000`                        |
 | `LOG_LEVEL`    | `INFO`                        |
+| `QDRANT_HOST`  | `localhost`                  |
+| `QDRANT_PORT`  | `6333`                       |
+| `POSTGRES_HOST`| `localhost`                  |
+| `POSTGRES_PORT`| `5432`                       |
+| `POSTGRES_USER`| `postgres`                   |
+| `POSTGRES_PASSWORD`| `postgres`                 |
+| `POSTGRES_DB`  | `onto`                       |
 
 ## Tests
 
@@ -76,6 +83,11 @@ app/
 ├── api/routes.py
 ├── pipeline/
 │   └── llm_processor.py  # LLMProcessor class
+├── resolver/
+│   ├── entity_resolver.py  # Entity resolution logic
+│   ├── qdrant_client.py   # Qdrant wrapper
+│   ├── postgres_repo.py    # PostgreSQL repository
+│   └── models.py          # Data models
 ├── schemas/document.py
 ├── config.py
 └── main.py
@@ -90,3 +102,5 @@ app/
 - Graceful shutdown
 - Health checks
 - Input validation
+- Entity resolution with Qdrant + PostgreSQL
+- Hybrid deduplication (confidence ≥ 0.85 → merge)
