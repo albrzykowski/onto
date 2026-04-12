@@ -1,11 +1,12 @@
 """E2E pipeline tests."""
-import os
 import subprocess
 import threading
 import time
 
 import pytest
 import requests as r
+
+from tests_e2e.fixtures import MockLLMProcessor, mock_get_embedding
 
 BASE = "http://localhost:8000"
 PYTHON = "python"
@@ -14,15 +15,10 @@ PYTHON = "python"
 @pytest.fixture(scope="module")
 def consumer_output():
     output = []
-    env = os.environ.copy()
-    env["QDRANT_HOST"] = "localhost"
-    env["POSTGRES_HOST"] = "localhost"
-    env["MOCK_LLM"] = "1"
     proc = subprocess.Popen(
-        [PYTHON, "-m", "app.queue.consumer"],
+        [PYTHON, "-m", "app.queue.consumer", "--mock"],
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
-        env=env,
     )
     time.sleep(3)
 

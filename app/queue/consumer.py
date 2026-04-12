@@ -2,7 +2,6 @@
 import json
 import os
 import urllib.request
-from unittest.mock import AsyncMock
 
 import pulsar
 from openai import OpenAI
@@ -20,7 +19,7 @@ from app.config import (
     TOPIC_PREFIX,
 )
 from app.logger import get_logger
-from app.pipeline.llm_processor import LLMProcessor, LLMResponse
+from app.pipeline.llm_processor import LLMProcessor
 from app.resolver import (
     EntityResolver,
     PostgresRepo,
@@ -29,8 +28,6 @@ from app.resolver import (
 )
 
 logger = get_logger(__name__)
-
-MOCK_MODE = os.getenv("MOCK_LLM", "").lower() == "1"
 
 
 def get_embedding(text: str) -> list[float]:
@@ -43,28 +40,22 @@ def get_embedding(text: str) -> list[float]:
     return response.data[0].embedding
 
 
-def mock_get_embedding(text: str) -> list[float]:
-    """Mock embedding for testing. Returns fixed vector based on text hash."""
-    hash_val = hash(text) % 1000
-    base = hash_val / 1000.0
-    return [base] * 1536
-
-
-def get_embedding_fn():
-    """Get embedding function based on MOCK_LLM flag."""
-    if MOCK_MODE:
-        return mock_get_embedding
-    return get_embedding
-
-
 class Consumer:
-    def __init__(self, poll_interval: float = 0.1, max_iterations: int | None = None):
+    def __init__(
+        self,
+        poll_interval: float = 0.1,
+        max_iterations: int | None = None,
+        embedding_fn=None,
+        processor_class=None,
+    ):
         self.client = None
         self.subscription = f"consumer-{os.getpid()}"
         self.consumers: dict = {}
         self.poll_interval = poll_interval
         self.max_iterations = max_iterations
         self._resolver: EntityResolver | None = None
+        self._embedding_fn = embedding_fn or get_embedding
+        self._processor_class = processor_class or LLMProcessor
 
     async def _get_resolver(self) -> EntityResolver:
         if self._resolver is None:
@@ -81,32 +72,12 @@ class Consumer:
             self._resolver = EntityResolver(
                 qdrant_client=qdrant,
                 postgres_repo=postgres,
-                embedding_fn=get_embedding_fn(),
+                embedding_fn=self._embedding_fn,
             )
-            logger.info("EntityResolver initialized (mock=%s)", MOCK_MODE)
         return self._resolver
 
     def _get_processor(self) -> LLMProcessor:
-        if MOCK_MODE:
-            processor = LLMProcessor()
-            processor.process = AsyncMock(return_value=self._mock_llm_response())
-            logger.info("Using mock LLM processor")
-            return processor
-        return LLMProcessor()
-
-    def _mock_llm_response(self):
-        return LLMResponse(
-            content={
-                "entities": [
-                    {"id": "E1", "label": "Poland", "type": "Location"},
-                    {"id": "E2", "label": "Warsaw", "type": "Location"},
-                ],
-                "relations": [
-                    {"subject": "E2", "predicate": "located_in", "object": "E1"},
-                ],
-            },
-            success=True,
-        )
+        return self._processor_class()
 
     async def messages(self):
         if self.client is None:
@@ -188,5 +159,17 @@ class Consumer:
 
 
 if __name__ == "__main__":
+    import argparse
     import asyncio
-    asyncio.run(Consumer().run())
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--mock", action="store_true", help="Use mock LLM processor")
+    args = parser.parse_args()
+
+    kwargs = {}
+    if args.mock:
+        from tests_e2e.fixtures import MockLLMProcessor, mock_get_embedding
+        kwargs["embedding_fn"] = mock_get_embedding
+        kwargs["processor_class"] = MockLLMProcessor
+
+    asyncio.run(Consumer(**kwargs).run())

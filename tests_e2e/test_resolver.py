@@ -12,6 +12,7 @@ from app.resolver import (
     QdrantClientWrapper,
     ResolverInput,
 )
+from tests_e2e.fixtures import mock_get_embedding
 
 BASE = "http://localhost:8000"
 HTTP_OK = 200
@@ -50,10 +51,6 @@ def postgres_connection():
     conn = get_postgres_connection()
     yield conn
     conn.close()
-
-
-def mock_get_embedding(text):
-    return [0.1] * 1536
 
 
 async def process_document_direct(content):

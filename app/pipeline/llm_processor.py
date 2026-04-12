@@ -75,7 +75,7 @@ class LLMProcessor:
         if not text:
             return LLMResponse(content={}, success=False, error="Empty text")
 
-        if os.getenv("MOCK_LLM", "").lower() == "1":
+        if MOCK_MODE:
             return LLMResponse(content=MOCK_ENTITIES, success=True)
 
         if not self._client:
