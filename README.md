@@ -52,10 +52,10 @@ curl -X POST http://localhost:8000/documents \
 
 ```bash
 # Unit tests (no external deps required)
-pytest tests/ -v        # 18 unit tests
+pytest tests/ -v        # 32 unit tests
 
 # E2E tests (requires Pulsar + API running)
-pytest tests_e2e/ -v    # 7 e2e
+pytest tests_e2e/ -v -m e2e    # 10 e2e
 ```
 
 ### E2E Test Environment

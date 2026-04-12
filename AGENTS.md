@@ -4,10 +4,10 @@
 
 ```bash
 # Run unit tests only (no external deps required)
-pytest tests/ -v --ignore=tests/test_llm_processor.py
+pytest tests/ -v
 
 # Run all tests and lint
-pytest tests/ tests_e2e/ -v -m e2e && ruff check app/
+pytest tests/ -v && pytest tests_e2e/ -v -m e2e && ruff check app/
 ```
 
 **Always run these after code changes to verify correctness.**
