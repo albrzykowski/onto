@@ -1,6 +1,6 @@
 # on:to
 
-Production-ready pipeline to create ontology from documents. Submit jobs via REST API, processed asynchronously with Apache Pulsar. Features retry logic, dynamic topic discovery, health checks, and input validation.
+Production-ready pipeline to create ontology from documents.
 
 ![Ruff](https://github.com/albrzykowski/onto/actions/workflows/lint.yml/badge.svg)
 ![Tests](https://github.com/albrzykowski/onto/actions/workflows/tests.yml/badge.svg)
