@@ -15,11 +15,12 @@ Follow Conventional Commits format:
 ```
 <type>: <description>
 
-Types: feat, fix, test, refactor, docs, chore, style, perf, ci, build, revert
+Types: feat, feat!, fix, test, refactor, docs, chore, style, perf, ci, build, revert
 ```
 
 Examples:
 - `feat: add new endpoint for documents`
+- `feat!: rename REST API endpoint for documents creation`
 - `fix: resolve API key not loading`
 - `test: add unit tests for LLMProcessor`
 - `docs: update README with setup instructions`

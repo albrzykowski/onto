@@ -5,8 +5,3 @@ pulsar-client
 requests
 python-dotenv
 openai
-pytest
-pytest-asyncio
-ruff
-mypy
-python-semantic-release
