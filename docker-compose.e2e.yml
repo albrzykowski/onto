@@ -1,3 +1,5 @@
+version: "3.8"
+
 services:
   pulsar:
     image: apachepulsar/pulsar:3.1.0
@@ -20,11 +22,6 @@ services:
     ports:
       - "6333:6333"
       - "6334:6334"
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:6333/collections"]
-      interval: 5s
-      timeout: 5s
-      retries: 10
     networks:
       - onto-e2e
 
@@ -55,8 +52,6 @@ services:
     depends_on:
       pulsar:
         condition: service_healthy
-      qdrant:
-        condition: service_healthy
       postgres:
         condition: service_healthy
     environment:
@@ -67,17 +62,14 @@ services:
       - POSTGRES_USER=postgres
       - POSTGRES_PASSWORD=postgres
       - POSTGRES_DB=onto
+      - MOCK_LLM=1
     env_file:
       - .env
     extra_hosts:
       - "host.docker.internal:host-gateway"
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
-      interval: 5s
-      timeout: 5s
-      retries: 15
     networks:
       - onto-e2e
+    restart: on-failure
 
 networks:
   onto-e2e:

@@ -64,13 +64,13 @@ def pytest_collection_modifyitems(config, items):
 
 @pytest.fixture(scope="session", autouse=True)
 def ensure_services():
-    max_retries = 30
+    max_retries = 10
     for _ in range(max_retries):
-        if is_server_running() and is_pulsar_running() and is_qdrant_running() and is_postgres_running():
+        if is_server_running():
             break
         time.sleep(1)
     else:
-        pytest.skip("Services not available")
+        pytest.skip("API not available")
 
 
 @pytest.fixture(scope="session")

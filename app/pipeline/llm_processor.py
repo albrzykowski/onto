@@ -7,12 +7,25 @@ from openai import OpenAI
 
 load_dotenv()
 
+MOCK_MODE = os.getenv("MOCK_LLM", "").lower() == "1"
+
 
 @dataclass
 class LLMResponse:
     content: dict
     success: bool
     error: str | None = None
+
+
+MOCK_ENTITIES = {
+    "entities": [
+        {"id": "E1", "label": "Poland", "type": "Location"},
+        {"id": "E2", "label": "Warsaw", "type": "Location"},
+    ],
+    "relations": [
+        {"subject": "E2", "predicate": "located_in", "object": "E1"},
+    ],
+}
 
 
 ONTOLOGY_PROMPT = """
@@ -61,6 +74,9 @@ class LLMProcessor:
     async def process(self, text: str) -> LLMResponse:
         if not text:
             return LLMResponse(content={}, success=False, error="Empty text")
+
+        if os.getenv("MOCK_LLM", "").lower() == "1":
+            return LLMResponse(content=MOCK_ENTITIES, success=True)
 
         if not self._client:
             return LLMResponse(content={}, success=False, error="OPENAI_API_KEY not set")

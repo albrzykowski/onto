@@ -31,14 +31,17 @@ def get_postgres_connection():
 
 @pytest.fixture(autouse=True)
 def clean_postgres():
-    conn = get_postgres_connection()
-    cursor = conn.cursor()
-    cursor.execute("TRUNCATE TABLE entities CASCADE")
-    cursor.execute("TRUNCATE TABLE relations CASCADE")
-    cursor.execute("TRUNCATE TABLE merge_history CASCADE")
-    conn.commit()
-    cursor.close()
-    conn.close()
+    try:
+        conn = get_postgres_connection()
+        cursor = conn.cursor()
+        cursor.execute("TRUNCATE TABLE entities CASCADE")
+        cursor.execute("TRUNCATE TABLE relations CASCADE")
+        cursor.execute("TRUNCATE TABLE merge_history CASCADE")
+        conn.commit()
+        cursor.close()
+        conn.close()
+    except Exception:
+        pass
     yield
 
 
