@@ -8,8 +8,8 @@ Production-ready pipeline to create ontology from documents.
 ## Quick Start
 
 ```bash
-# Start Pulsar
-docker run -d --name pulsar -p 6650:6650 -p 8080:8080 apachepulsar/pulsar:3.1.0 bin/pulsar standalone
+# Start all services (Pulsar, Qdrant, PostgreSQL)
+docker compose -f docker-compose.e2e.yml up -d
 
 # Run
 python -m app.queue.consumer &
