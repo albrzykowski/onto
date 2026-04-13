@@ -33,17 +33,17 @@ Examples:
 
 Consumer must start before API (or concurrently): `python -m app.queue.consumer & python -m app.main`
 
-## E2E Environment
+## Local Dev Environment
 
 ```bash
-# Start all E2E services (Pulsar, Qdrant, PostgreSQL, API)
-docker-compose -f docker-compose.e2e.yml up -d
+# Start all local dev services (Pulsar, Qdrant, PostgreSQL, API)
+docker-compose -f docker-compose.dev.yml up -d
 
 # Run E2E tests
 pytest tests_e2e/ -v -m e2e
 
-# Stop E2E services
-docker-compose -f docker-compose.e2e.yml down
+# Stop local dev services
+docker-compose -f docker-compose.dev.yml down
 ```
 
 ## Environment
@@ -74,11 +74,14 @@ docker-compose -f docker-compose.e2e.yml down
 - Example:
   ```python
   def test_example():
-      # Given
+
+      # Given (no additional comments here)
       ...
-      # When
+
+      # When (no additional comments here)
       ...
-      # Then
+
+      # Then (no additional comments here)
       ...
   ```
 
