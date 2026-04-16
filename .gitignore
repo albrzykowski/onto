@@ -222,3 +222,4 @@ PROMPT.md
 .opencode/
 opencode.config.json
 requirements-opencode.txt
+logs.txt
