@@ -220,3 +220,5 @@ __marimo__/
 prompt.txt
 PROMPT.md
 .opencode/
+opencode.config.json
+requirements-opencode.txt
