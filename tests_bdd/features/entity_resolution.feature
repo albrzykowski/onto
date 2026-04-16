@@ -1,8 +1,8 @@
 Feature: Entity Resolution
 
-  As the ontology pipeline,
-  I resolve extracted entities against existing knowledge base,
-  So that duplicate entities are merged and canonical records are maintained.
+  As a knowledge engineer of the ontology pipeline,
+  I want duplicate entities to be merged automatically,
+  So that the knowledge base remains consistent and reliable.
 
   Background:
     Given the Qdrant vector store is available

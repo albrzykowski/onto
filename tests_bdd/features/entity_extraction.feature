@@ -1,8 +1,8 @@
 Feature: Entity Extraction
 
-  As the ontology pipeline,
-  I extract structured entities and relations from raw text,
-  So that downstream processing can deduplicate and store knowledge.
+  As a knowledge engineer of the ontology pipeline,
+  I want structured entities and relations to be extracted from text,
+  So that I can build a structured knowledge graph.
 
   Background:
     Given the LLM API is configured with a valid API key
