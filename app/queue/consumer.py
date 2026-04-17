@@ -156,20 +156,3 @@ class Consumer:
     def close(self):
         if self.client:
             self.client.close()
-
-
-if __name__ == "__main__":
-    import argparse
-    import asyncio
-
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--mock", action="store_true", help="Use mock LLM processor")
-    args = parser.parse_args()
-
-    kwargs = {}
-    if args.mock:
-        from tests_e2e.fixtures import MockLLMProcessor, mock_get_embedding
-        kwargs["embedding_fn"] = mock_get_embedding
-        kwargs["processor_class"] = MockLLMProcessor
-
-    asyncio.run(Consumer(**kwargs).run())

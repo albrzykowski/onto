@@ -12,7 +12,7 @@ from app.resolver import (
     QdrantClientWrapper,
     ResolverInput,
 )
-from tests_e2e.fixtures import mock_get_embedding
+from tests.mocks.mock_fixtures import mock_get_embedding
 
 BASE = "http://localhost:8000"
 HTTP_OK = 200

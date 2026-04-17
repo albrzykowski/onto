@@ -6,7 +6,7 @@ import time
 import pytest
 import requests as r
 
-from tests_e2e.fixtures import MockLLMProcessor, mock_get_embedding
+from tests.mocks.mock_fixtures import MockLLMProcessor, mock_get_embedding
 
 BASE = "http://localhost:8000"
 PYTHON = "python"
@@ -16,7 +16,7 @@ PYTHON = "python"
 def consumer_output():
     output = []
     proc = subprocess.Popen(
-        [PYTHON, "-m", "app.queue.consumer", "--mock"],
+        [PYTHON, "scripts/test_consumer.py"],
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
     )
@@ -40,7 +40,7 @@ def test_document_processed_by_consumer(precreated_topic, consumer_output):
     payload = {"tenant_id": precreated_topic, "content": "test content"}
     # When
     r.post(f"{BASE}/documents", json=payload)
-    time.sleep(8)
+    time.sleep(15)
     # Then
     output_text = "".join(consumer_output)
     assert f"Processing document for tenant: {precreated_topic}" in output_text

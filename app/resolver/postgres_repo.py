@@ -9,7 +9,6 @@ from app.config import (
     POSTGRES_PORT,
     POSTGRES_USER,
 )
-from app.resolver.models import EntityType
 
 logger = logging.getLogger(__name__)
 
@@ -57,11 +56,16 @@ class PostgresRepo:
                     canonical_id UUID NOT NULL,
                     label TEXT NOT NULL,
                     entity_type TEXT NOT NULL,
+                    definition TEXT,
                     embedding_id TEXT,
                     created_at TIMESTAMP DEFAULT NOW(),
                     updated_at TIMESTAMP DEFAULT NOW()
                 )
             """)
+            try:
+                await conn.execute("ALTER TABLE entities ADD COLUMN IF NOT EXISTS definition TEXT")
+            except Exception:
+                pass
             await conn.execute("""
                 CREATE TABLE IF NOT EXISTS relations (
                     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -81,17 +85,18 @@ class PostgresRepo:
             """)
             logger.info("Database schema initialized")
 
-    async def insert_entity(self, canonical_id: str, label: str, entity_type: EntityType, embedding_id: str | None = None) -> str:
+    async def insert_entity(self, canonical_id: str, label: str, entity_type: str, definition: str | None = None, embedding_id: str | None = None) -> str:
         async with self._pool.acquire() as conn:
             entity_id = await conn.fetchval(
                 """
-                INSERT INTO entities (canonical_id, label, entity_type, embedding_id)
-                VALUES ($1, $2, $3, $4)
+                INSERT INTO entities (canonical_id, label, entity_type, definition, embedding_id)
+                VALUES ($1, $2, $3, $4, $5)
                 RETURNING id
                 """,
                 canonical_id,
                 label,
-                entity_type.value,
+                entity_type,
+                definition,
                 embedding_id,
             )
             return str(entity_id)

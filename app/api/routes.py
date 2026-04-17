@@ -5,7 +5,7 @@ from fastapi import APIRouter, HTTPException, status
 
 from app.config import PULSAR_URL, TOPIC_PREFIX
 from app.logger import get_logger
-from app.queue.producer import Producer
+from app.queue.producer import Producer, PulsarConnectionError
 from app.schemas.document import DocumentRequest
 
 router = APIRouter()
@@ -34,6 +34,9 @@ def create_document(doc: DocumentRequest):
         topic = f"{TOPIC_PREFIX}/tenant-{doc.tenant_id}"
         producer.send(topic=topic, msg=doc.model_dump())
         return {"status": "accepted", "tenant_id": doc.tenant_id}
+    except PulsarConnectionError as e:
+        log.error(f"Pulsar unavailable: {e}")
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, detail={"status": "failed", "error": str(e)})
     except Exception as e:
         log.error(f"Failed: {e}")
         raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, detail={"status": "failed", "error": str(e)})

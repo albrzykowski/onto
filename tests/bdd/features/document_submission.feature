@@ -37,5 +37,5 @@ Feature: Document Submission
   Scenario: Handle Pulsar unavailable gracefully
     Given Pulsar message broker is unavailable
     When I submit a document with tenant_id "test-tenant" and content "Test content"
-    Then the API should return status 500
+    Then the API should return status 503
     And the response should include an error message

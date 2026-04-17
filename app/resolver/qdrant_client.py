@@ -4,7 +4,6 @@ from qdrant_client import QdrantClient
 from qdrant_client.models import Distance, PointStruct, VectorParams
 
 from app.config import QDRANT_HOST, QDRANT_PORT
-from app.resolver.models import EntityType
 
 logger = logging.getLogger(__name__)
 
@@ -31,11 +30,11 @@ class QdrantClientWrapper:
         self,
         embedding: list[float],
         top_k: int = 5,
-        entity_type: EntityType | None = None,
+        entity_type: str | None = None,
     ) -> list[dict]:
         filter_condition = None
         if entity_type:
-            filter_condition = {"must": [{"key": "entity_type", "match": {"value": entity_type.value}}]}
+            filter_condition = {"must": [{"key": "entity_type", "match": {"value": entity_type}}]}
 
         results = self.client.search(
             collection_name=COLLECTION_NAME,
@@ -55,7 +54,7 @@ class QdrantClientWrapper:
             for r in results
         ]
 
-    async def insert_entity(self, entity_id: str, embedding: list[float], label: str, entity_type: EntityType, canonical_id: str):
+    async def insert_entity(self, entity_id: str, embedding: list[float], label: str, entity_type: str, canonical_id: str):
         self.client.upsert(
             collection_name=COLLECTION_NAME,
             points=[
@@ -64,7 +63,7 @@ class QdrantClientWrapper:
                     vector=embedding,
                     payload={
                         "label": label,
-                        "entity_type": entity_type.value,
+                        "entity_type": entity_type,
                         "canonical_id": canonical_id,
                     },
                 )

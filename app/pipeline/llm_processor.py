@@ -7,25 +7,12 @@ from openai import OpenAI
 
 load_dotenv()
 
-MOCK_MODE = os.getenv("MOCK_LLM", "").lower() == "1"
-
 
 @dataclass
 class LLMResponse:
     content: dict
     success: bool
     error: str | None = None
-
-
-MOCK_ENTITIES = {
-    "entities": [
-        {"id": "E1", "label": "Poland", "type": "Location"},
-        {"id": "E2", "label": "Warsaw", "type": "Location"},
-    ],
-    "relations": [
-        {"subject": "E2", "predicate": "located_in", "object": "E1"},
-    ],
-}
 
 
 ONTOLOGY_PROMPT = """
@@ -41,7 +28,8 @@ Schema:
     {
       "id": "string",
       "label": "string",
-      "type": "Person | Organization | Location | Event | Concept | Product | Other"
+      "type": "Person | Organization | Location | Event | Concept | Product | Other",
+      "definition": "string describing the entity"
     }
   ],
   "relations": [
@@ -57,7 +45,8 @@ Rules:
 - Every entity must have a unique id (E1, E2, E3...)
 - Use canonical labels (e.g. "OpenAI", not variants)
 - Relations must reference entity IDs, not raw text
-- Use simple predicates: works_for, located_in, part_of, uses, creates, causes, related_to
+- Use simple predicates: works_for, located_in, part_of, uses, creates, causes, related_to, met
+- Include a definition for each entity describing what it is
 - If nothing is found, return empty lists
 - Ensure JSON is valid and parsable
 
@@ -75,9 +64,6 @@ class LLMProcessor:
         if not text:
             return LLMResponse(content={}, success=False, error="Empty text")
 
-        if MOCK_MODE:
-            return LLMResponse(content=MOCK_ENTITIES, success=True)
-
         if not self._client:
             return LLMResponse(content={}, success=False, error="OPENAI_API_KEY not set")
 
@@ -89,7 +75,6 @@ class LLMProcessor:
 
             raw = response.output[0].content[0].text
 
-            # safe JSON parsing
             data = json.loads(raw)
 
             return LLMResponse(content=data, success=True)

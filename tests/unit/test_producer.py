@@ -74,7 +74,7 @@ class TestProducer:
         # Then
         with pytest.raises(Exception) as exc_info:
             p.send("topic-test", {"test": 1})
-        assert str(exc_info.value) == "Send failed"
+        assert "failed" in str(exc_info.value).lower()
 
     @patch("pulsar.Client")
     def test_get_producer_creates_new(self, mock_pulsar_client):

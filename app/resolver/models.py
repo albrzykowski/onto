@@ -3,16 +3,6 @@ from enum import Enum
 from typing import TypedDict
 
 
-class EntityType(str, Enum):
-    PERSON = "Person"
-    ORGANIZATION = "Organization"
-    LOCATION = "Location"
-    EVENT = "Event"
-    CONCEPT = "Concept"
-    PRODUCT = "Product"
-    OTHER = "Other"
-
-
 class ResolutionAction(str, Enum):
     MERGE = "merge"
     CREATE_NEW = "create_new"
@@ -22,6 +12,7 @@ class EntityDict(TypedDict):
     id: str
     label: str
     type: str
+    definition: str | None
 
 
 class RelationDict(TypedDict):
@@ -34,7 +25,8 @@ class RelationDict(TypedDict):
 class Entity:
     id: str
     label: str
-    type: EntityType
+    type: str
+    definition: str | None = None
 
 
 @dataclass

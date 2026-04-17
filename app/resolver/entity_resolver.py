@@ -4,7 +4,6 @@ from collections.abc import Callable
 
 from app.resolver.models import (
     EntityDict,
-    EntityType,
     RelationDict,
     ResolutionAction,
     ResolutionDecision,
@@ -48,26 +47,24 @@ class EntityResolver:
 
     async def _resolve_entity(self, entity_dict: EntityDict) -> ResolutionDecision:
         label = entity_dict["label"]
-        entity_type = self._parse_entity_type(entity_dict["type"])
+        entity_type = entity_dict["type"]
+        definition = entity_dict.get("definition", None)
         embedding = self._get_embedding(label)
 
         if embedding is None:
-            return self._create_decision(ResolutionAction.CREATE_NEW, str(uuid.uuid4()), 0.0)
+            return await self._create_new_entity(label, entity_type, definition, [], 0.0)
 
         candidates = await self._search_candidates(embedding, entity_type)
 
         if not candidates:
-            return await self._create_new_entity(label, entity_type, embedding, 1.0)
+            return await self._create_new_entity(label, entity_type, definition, embedding, 1.0)
 
         final_score = self._calculate_score(candidates[0], entity_type)
 
         if final_score >= self.confidence_threshold:
             return await self._merge_entity(candidates[0], final_score)
 
-        return await self._create_new_entity(label, entity_type, embedding, final_score)
-
-    def _parse_entity_type(self, entity_type_str: str) -> EntityType:
-        return EntityType(entity_type_str) if entity_type_str in EntityType.__members__ else EntityType.OTHER
+        return await self._create_new_entity(label, entity_type, definition, embedding, final_score)
 
     def _get_embedding(self, label: str) -> list[float] | None:
         try:
@@ -76,7 +73,7 @@ class EntityResolver:
             logger.error(f"Failed to generate embedding for {label}: {e}")
             return None
 
-    async def _search_candidates(self, embedding: list[float], entity_type: EntityType) -> list[dict]:
+    async def _search_candidates(self, embedding: list[float], entity_type: str) -> list[dict]:
         try:
             return await self.qdrant.search_similar(
                 embedding=embedding,
@@ -87,28 +84,30 @@ class EntityResolver:
             logger.warning(f"Qdrant search failed, creating new entity: {e}")
             return []
 
-    def _calculate_score(self, candidate: dict, entity_type: EntityType) -> float:
+    def _calculate_score(self, candidate: dict, entity_type: str) -> float:
         base_score = candidate["score"]
-        type_match = candidate.get("entity_type") == entity_type.value
+        type_match = candidate.get("entity_type") == entity_type
         return base_score - (0.1 if not type_match else 0.0)
 
-    async def _create_new_entity(self, label: str, entity_type: EntityType, embedding: list[float], confidence: float) -> ResolutionDecision:
+    async def _create_new_entity(self, label: str, entity_type: str, definition: str | None, embedding: list[float], confidence: float) -> ResolutionDecision:
         canonical_id = str(uuid.uuid4())
         entity_id = await self.postgres.insert_entity(
             canonical_id=canonical_id,
             label=label,
             entity_type=entity_type,
+            definition=definition,
         )
-        try:
-            await self.qdrant.insert_entity(
-                entity_id=entity_id,
-                embedding=embedding,
-                label=label,
-                entity_type=entity_type,
-                canonical_id=canonical_id,
-            )
-        except Exception as e:
-            logger.error(f"Failed to index in Qdrant: {e}")
+        if embedding:
+            try:
+                await self.qdrant.insert_entity(
+                    entity_id=entity_id,
+                    embedding=embedding,
+                    label=label,
+                    entity_type=entity_type,
+                    canonical_id=canonical_id,
+                )
+            except Exception as e:
+                logger.error(f"Failed to index in Qdrant: {e}")
 
         return self._create_decision(ResolutionAction.CREATE_NEW, canonical_id, confidence)
 

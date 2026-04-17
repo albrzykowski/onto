@@ -83,7 +83,6 @@ services:
       - POSTGRES_USER=postgres
       - POSTGRES_PASSWORD=postgres
       - POSTGRES_DB=onto
-      - MOCK_LLM=1
     env_file:
       - .env
     extra_hosts:
@@ -91,7 +90,7 @@ services:
     networks:
       - onto-e2e
     restart: on-failure
-    command: ["python", "-m", "app.queue.consumer"]
+    command: ["python", "scripts/test_consumer.py"]
 
   api:
     build:
@@ -115,7 +114,6 @@ services:
       - POSTGRES_USER=postgres
       - POSTGRES_PASSWORD=postgres
       - POSTGRES_DB=onto
-      - MOCK_LLM=1
     env_file:
       - .env
     extra_hosts:
