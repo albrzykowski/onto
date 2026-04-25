@@ -3,11 +3,11 @@
 ## Commands
 
 ```bash
-# Run unit tests only (no external deps required)
+# Run unit and BDD tests
 pytest tests/ -v
 
-# Run all tests and lint
-pytest tests/ -v && pytest tests_e2e/ -v -m e2e && ruff check app/
+# Run lint
+ruff check app/
 ```
 
 **Always run these after code changes to verify correctness.**

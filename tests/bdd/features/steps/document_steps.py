@@ -1,7 +1,7 @@
 """Step definitions for document submission feature."""
 
 import requests
-from behave import given, when, then
+from behave import given, then, when
 
 API_BASE_URL = "http://localhost:8000"
 

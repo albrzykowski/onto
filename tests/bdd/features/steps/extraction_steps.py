@@ -1,9 +1,10 @@
 """Step definitions for entity extraction feature."""
 
 import time
+
 import psycopg2
 import requests
-from behave import given, when, then
+from behave import given, then, when
 
 API_BASE_URL = "http://localhost:8000"
 

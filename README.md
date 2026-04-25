@@ -203,13 +203,13 @@ Submit a document for ontology extraction.
 ## Testing
 
 ```bash
-# Unit tests (no external deps)
+# Run unit tests
 pytest tests/ -v
 
-# E2E tests (requires services)
-docker compose -f docker-compose.dev.yml up -d
-pytest tests_e2e/ -v -m e2e
-docker compose -f docker-compose.dev.yml down
+# Run BDD tests (requires services)
+docker-compose -f docker-compose.dev.yml up -d
+behave tests/bdd/features/
+docker-compose -f docker-compose.dev.yml down
 ```
 
 ## Project Structure
@@ -218,6 +218,8 @@ docker compose -f docker-compose.dev.yml down
 app/
 ├── api/
 │   └── routes.py          # FastAPI routes
+├── jobs/
+│   └── store.py           # Job status tracking
 ├── queue/
 │   ├── producer.py        # Pulsar producer
 │   └── consumer.py        # Pulsar consumer
@@ -225,6 +227,7 @@ app/
 │   └── llm_processor.py  # LLM processing
 ├── resolver/
 │   ├── entity_resolver.py # Entity resolution
+│   ├── entity_retrieval.py # Entity retrieval
 │   ├── qdrant_client.py   # Qdrant client
 │   ├── postgres_repo.py   # PostgreSQL repo
 │   └── models.py          # Data models
@@ -233,6 +236,11 @@ app/
 ├── config.py              # Configuration
 ├── logger.py              # Logging
 └── main.py                # App entrypoint
+
+tests/
+├── unit/                  # Unit tests
+└── bdd/
+    └── features/          # BDD test scenarios
 ```
 
 ## Features

@@ -1,8 +1,9 @@
 """Step definitions for health monitoring feature."""
 
 import time
+
 import requests
-from behave import given, when, then
+from behave import given, then, when
 
 API_BASE_URL = "http://localhost:8000"
 
