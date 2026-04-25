@@ -9,6 +9,7 @@ def pytest_configure(config):
     config.addinivalue_line("markers", "health: Health monitoring scenarios")
     config.addinivalue_line("markers", "extraction: Entity extraction scenarios")
     config.addinivalue_line("markers", "resolution: Entity resolution scenarios")
+    config.addinivalue_line("markers", "retrieval: Entity retrieval scenarios")
     config.addinivalue_line("markers", "integration: End-to-end integration scenarios")
 
 

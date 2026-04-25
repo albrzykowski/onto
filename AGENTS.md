@@ -68,6 +68,20 @@ docker-compose -f docker-compose.dev.yml down
 - E2E tests exist in `tests_e2e/` (requires server running)
 - Use marker `@pytest.mark.e2e` for end-to-end tests
 
+### BDD Tests
+
+```bash
+# Start dev services first
+docker-compose -f docker-compose.dev.yml up -d
+
+# Run BDD tests (behave)
+behave tests/bdd/features/
+# or specific feature:
+behave tests/bdd/features/entity_retrieval.feature
+```
+
+BDD features are in `tests/bdd/features/*.feature` with step definitions in `tests/bdd/features/steps/`.
+
 ## Test Conventions
 
 - Always use #Given #When #Then comments in tests

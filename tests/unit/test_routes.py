@@ -55,7 +55,7 @@ class TestCreateDocument:
         # When
         result = create_document(doc)
         # Then
-        assert result["status"] == "accepted"
+        assert result["status"] == "queued"
         mock_producer.send.assert_called_once()
 
     @patch("app.api.routes.producer")

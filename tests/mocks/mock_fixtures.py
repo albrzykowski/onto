@@ -105,10 +105,13 @@ def extract_mock_entities_with_definitions(text: str) -> dict:
 
 
 def mock_get_embedding(text: str) -> list[float]:
-    """Mock embedding for testing. Returns fixed vector based on text hash."""
-    hash_val = hash(text) % 1000
-    base = hash_val / 1000.0
-    return [base] * 1536
+    """Mock embedding for testing. Returns unique vector based on text content."""
+    import hashlib
+    hash_bytes = hashlib.sha256(text.encode()).digest()
+    vector = [b / 255.0 for b in hash_bytes]
+    while len(vector) < 1536:
+        vector.extend(vector[: min(32, len(vector))])
+    return vector[:1536]
 
 
 class MockLLMProcessor(LLMProcessor):

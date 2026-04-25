@@ -26,7 +26,7 @@ class QdrantClientWrapper:
             )
             logger.info(f"Created collection: {COLLECTION_NAME}")
 
-    async def search_similar(
+    def search_similar(
         self,
         embedding: list[float],
         top_k: int = 5,
@@ -36,12 +36,14 @@ class QdrantClientWrapper:
         if entity_type:
             filter_condition = {"must": [{"key": "entity_type", "match": {"value": entity_type}}]}
 
-        results = self.client.search(
+        response = self.client.query_points(
             collection_name=COLLECTION_NAME,
-            query_vector=embedding,
+            query=embedding,
             limit=top_k,
             query_filter=filter_condition,
         )
+
+        points = response.points if hasattr(response, 'points') else response
 
         return [
             {
@@ -51,22 +53,42 @@ class QdrantClientWrapper:
                 "entity_type": r.payload.get("entity_type"),
                 "canonical_id": r.payload.get("canonical_id"),
             }
-            for r in results
+            for r in points
         ]
 
-    async def insert_entity(self, entity_id: str, embedding: list[float], label: str, entity_type: str, canonical_id: str):
+    async def search_similar_async(
+        self,
+        embedding: list[float],
+        top_k: int = 5,
+        entity_type: str | None = None,
+    ) -> list[dict]:
+        return self.search_similar(embedding, top_k, entity_type)
+
+    def _upsert(self, points: list[dict]):
         self.client.upsert(
             collection_name=COLLECTION_NAME,
             points=[
                 PointStruct(
-                    id=entity_id,
-                    vector=embedding,
-                    payload={
+                    id=p["id"],
+                    vector=p["vector"],
+                    payload=p.get("payload", {}),
+                )
+                for p in points
+            ],
+        )
+
+    def insert_entity(self, entity_id: str, embedding: list[float], label: str, entity_type: str, canonical_id: str):
+        self._upsert(
+            points=[
+                {
+                    "id": entity_id,
+                    "vector": embedding,
+                    "payload": {
                         "label": label,
                         "entity_type": entity_type,
                         "canonical_id": canonical_id,
                     },
-                )
+                }
             ],
         )
 
@@ -76,3 +98,6 @@ class QdrantClientWrapper:
             points=[entity_id],
             payload={"canonical_id": canonical_id},
         )
+
+    def upsert(self, collection_name: str, points: list[dict]):
+        self._upsert(points)
