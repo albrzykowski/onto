@@ -36,14 +36,11 @@ Consumer must start before API (or concurrently): `python -m app.queue.consumer 
 ## Local Dev Environment
 
 ```bash
-# Start all local dev services (Pulsar, Qdrant, PostgreSQL, API)
+# Start all services
 docker-compose -f docker-compose.dev.yml up -d
 
-# Run E2E tests
-pytest tests_e2e/ -v -m e2e
-
-# Stop local dev services
-docker-compose -f docker-compose.dev.yml down
+# Stop and cleanup
+docker-compose -f docker-compose.dev.yml down --remove-orphans -v
 ```
 
 ## Environment
@@ -55,32 +52,20 @@ docker-compose -f docker-compose.dev.yml down
 | TOPIC_PREFIX | persistent://public/default |
 | HOST | 0.0.0.0 |
 | PORT | 8000 |
-| QDRANT_HOST | localhost |
-| QDRANT_PORT | 6333 |
-| POSTGRES_HOST | localhost |
-| POSTGRES_PORT | 5432 |
-| POSTGRES_USER | postgres |
-| POSTGRES_PASSWORD | postgres |
-| POSTGRES_DB | onto |
 
 ## Testing
-
-- E2E tests exist in `tests_e2e/` (requires server running)
-- Use marker `@pytest.mark.e2e` for end-to-end tests
-
-### BDD Tests
-
+### Unit Tests
 ```bash
-# Start dev services first
-docker-compose -f docker-compose.dev.yml up -d
-
-# Run BDD tests (behave)
-behave tests/bdd/features/
-# or specific feature:
-behave tests/bdd/features/entity_retrieval.feature
+pytest tests/unit/ -v
+ruff check app/
 ```
 
-BDD features are in `tests/bdd/features/*.feature` with step definitions in `tests/bdd/features/steps/`.
+### BDD Tests
+Each scenario runs on a fresh Docker environment (clean after every scenario, start before every scenario).
+```bash
+# 1. Run tests - environment.py automatically handles cleanup/start
+behave tests/bdd/features/ | tee /dev/null
+```
 
 ## Test Conventions
 

@@ -1,6 +1,6 @@
 Feature: Health Monitoring
 
-  As an operator of the ontology pipeline,
+  As an operator of the pipeline,
   I want to monitor system health,
   So that I can verify the system is operational.
 

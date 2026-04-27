@@ -1,6 +1,6 @@
 """Unit tests for async consumer."""
 import asyncio
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock, patch
 
 import pulsar
 
@@ -73,16 +73,13 @@ class TestConsumer:
         mock_pulsar_client.return_value.subscribe.return_value = mock_consumer
         c = Consumer(poll_interval=0, max_iterations=1)
         c._topics = MagicMock(return_value=["persistent://public/default/tenant-a"])
-        c._resolver = AsyncMock()
 
-        with patch.object(c, "_get_resolver", new_callable=AsyncMock) as mock_resolver:
-            mock_resolver.return_value = AsyncMock()
-            with patch("app.queue.consumer.logger") as mock_log:
-                # When
-                asyncio.run(c.run())
+        with patch("app.queue.consumer.logger") as mock_log:
+            # When
+            asyncio.run(c.run())
 
-                # Then
-                mock_log.info.assert_called()
+            # Then
+            mock_log.info.assert_called()
 
     def test_close(self):
         # Given

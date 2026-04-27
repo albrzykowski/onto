@@ -10,9 +10,6 @@ Production-ready pipeline to create ontology from documents.
 on:to is a document processing pipeline that extracts structured ontology from text documents. It uses:
 
 - **Apache Pulsar** - Message queue for async processing
-- **Qdrant** - Vector database for semantic search & entity resolution
-- **PostgreSQL** - Persistent storage for resolved entities
-- **LLM** - OpenAI-compatible API for ontology extraction
 
 ## Quick Start (Docker)
 
@@ -22,7 +19,7 @@ Everything runs in Docker - no Python setup required:
 # 1. Create .env with your API key
 echo "OPENAI_API_KEY=your-key" > .env
 
-# 2. Start all services (Pulsar, Qdrant, PostgreSQL, Consumer, API)
+# 2. Start all services (Pulsar, Consumer, API)
 docker compose up -d
 
 # 3. Send a document
@@ -33,9 +30,7 @@ curl -X POST http://localhost:8000/documents \
 
 The docker-compose includes:
 - `pulsar` - Message queue
-- `qdrant` - Vector database  
-- `postgres` - PostgreSQL
-- `consumer` - Background worker (processes messages)
+- `consumer` - Background worker (logs messages)
 - `api` - HTTP API server
 
 ## Quick Start (Local Development)
@@ -75,19 +70,9 @@ pip install -r requirements.txt
 
 | Variable            | Required | Default                       | Description                    |
 |--------------------|----------|-------------------------------|--------------------------------|
-| `OPENAI_API_KEY`    | Yes      | -                             | API key for LLM                  |
-| `OPENAI_BASE_URL`  | No       | `https://api.openai.com/v1`    | Custom LLM endpoint           |
-| `OPENAI_MODEL`     | No       | `gpt-4o-mini`                 | Model name                     |
 | `PULSAR_URL`       | No       | `pulsar://localhost:6650`      | Pulsar broker URL               |
 | `PULSAR_ADMIN`     | No       | `http://localhost:8080`       | Pulsar admin URL              |
 | `TOPIC_PREFIX`     | No       | `persistent://public/default` | Topic prefix for tenants       |
-| `QDRANT_HOST`      | No       | `localhost`                   | Qdrant host                   |
-| `QDRANT_PORT`      | No       | `6333`                        | Qdrant port                   |
-| `POSTGRES_HOST`    | No       | `localhost`                   | PostgreSQL host               |
-| `POSTGRES_PORT`    | No       | `5432`                        | PostgreSQL port               |
-| `POSTGRES_USER`    | No       | `postgres`                    | PostgreSQL user              |
-| `POSTGRES_PASSWORD`| No       | `postgres`                    | PostgreSQL password          |
-| `POSTGRES_DB`      | No       | `onto`                        | Database name                |
 | `HOST`             | No       | `0.0.0.0`                     | API server host               |
 | `PORT`             | No       | `8000`                        | API server port              |
 
@@ -191,25 +176,21 @@ Submit a document for ontology extraction.
 ## How It Works
 
 1. **Producer** sends documents to Pulsar topic per tenant
-2. **Consumer** reads messages and processes them
-3. **LLMProcessor** extracts ontology entities using LLM
-4. **EntityResolver** performs hybrid deduplication:
-   - Embeds extracted entities in Qdrant
-   - Searches for similar existing entities
-   - Merges if confidence ≥ 0.85
-   - Creates new entity if no match
-5. **PostgreSQL** stores resolved entities
+2. **Consumer** reads messages and logs them to console
 
 ## Testing
 
+### Unit Tests
 ```bash
-# Run unit tests
-pytest tests/ -v
+pytest tests/unit/ -v
+ruff check app/
+```
 
-# Run BDD tests (requires services)
-docker-compose -f docker-compose.dev.yml up -d
-behave tests/bdd/features/
-docker-compose -f docker-compose.dev.yml down
+### BDD Tests
+Each scenario runs on a fresh Docker environment (clean after every scenario, start before every scenario).
+```bash
+# Run tests - environment.py automatically handles cleanup/start
+behave tests/bdd/features/ | tee /dev/null
 ```
 
 ## Project Structure
@@ -222,15 +203,7 @@ app/
 │   └── store.py           # Job status tracking
 ├── queue/
 │   ├── producer.py        # Pulsar producer
-│   └── consumer.py        # Pulsar consumer
-├── pipeline/
-│   └── llm_processor.py  # LLM processing
-├── resolver/
-│   ├── entity_resolver.py # Entity resolution
-│   ├── entity_retrieval.py # Entity retrieval
-│   ├── qdrant_client.py   # Qdrant client
-│   ├── postgres_repo.py   # PostgreSQL repo
-│   └── models.py          # Data models
+│   └── consumer.py        # Pulsar consumer (logs messages)
 ├── schemas/
 │   └── document.py        # Request schemas
 ├── config.py              # Configuration
@@ -252,5 +225,3 @@ tests/
 - Graceful shutdown
 - Health checks
 - Input validation
-- Entity resolution with Qdrant + PostgreSQL
-- Hybrid deduplication (confidence ≥ 0.85 → merge)

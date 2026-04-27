@@ -1,43 +1,14 @@
-"""Async consumer for Pulsar."""
+"""Async consumer for Pulsar - logs received messages."""
 import json
 import os
 import urllib.request
 
 import pulsar
-from openai import OpenAI
 
-from app.config import (
-    POSTGRES_DB,
-    POSTGRES_HOST,
-    POSTGRES_PASSWORD,
-    POSTGRES_PORT,
-    POSTGRES_USER,
-    PULSAR_ADMIN,
-    PULSAR_URL,
-    QDRANT_HOST,
-    QDRANT_PORT,
-    TOPIC_PREFIX,
-)
+from app.config import PULSAR_ADMIN, PULSAR_URL, TOPIC_PREFIX
 from app.logger import get_logger
-from app.pipeline.llm_processor import LLMProcessor
-from app.resolver import (
-    EntityResolver,
-    PostgresRepo,
-    QdrantClientWrapper,
-    ResolverInput,
-)
 
 logger = get_logger(__name__)
-
-
-def get_embedding(text: str) -> list[float]:
-    """Generate embedding for text. Uses OpenAI text-embedding-3-small model."""
-    client = OpenAI()
-    response = client.embeddings.create(
-        model="text-embedding-3-small",
-        input=text,
-    )
-    return response.data[0].embedding
 
 
 class Consumer:
@@ -45,39 +16,12 @@ class Consumer:
         self,
         poll_interval: float = 0.1,
         max_iterations: int | None = None,
-        embedding_fn=None,
-        processor_class=None,
     ):
         self.client = None
         self.subscription = f"consumer-{os.getpid()}"
         self.consumers: dict = {}
         self.poll_interval = poll_interval
         self.max_iterations = max_iterations
-        self._resolver: EntityResolver | None = None
-        self._embedding_fn = embedding_fn or get_embedding
-        self._processor_class = processor_class or LLMProcessor
-
-    async def _get_resolver(self) -> EntityResolver:
-        if self._resolver is None:
-            qdrant = QdrantClientWrapper(host=QDRANT_HOST, port=QDRANT_PORT)
-            postgres = PostgresRepo(
-                host=POSTGRES_HOST,
-                port=POSTGRES_PORT,
-                user=POSTGRES_USER,
-                password=POSTGRES_PASSWORD,
-                database=POSTGRES_DB,
-            )
-            await postgres.connect()
-            await postgres.init_schema()
-            self._resolver = EntityResolver(
-                qdrant_client=qdrant,
-                postgres_repo=postgres,
-                embedding_fn=self._embedding_fn,
-            )
-        return self._resolver
-
-    def _get_processor(self) -> LLMProcessor:
-        return self._processor_class()
 
     async def messages(self):
         if self.client is None:
@@ -107,7 +51,7 @@ class Consumer:
             except pulsar.Timeout:
                 pass
             except Exception as e:
-                logger.error(f"Err: {e}")
+                logger.error(f"Error receiving message: {e}")
         return None
 
     def _topics(self):
@@ -117,41 +61,10 @@ class Consumer:
         except Exception:
             return []
 
-    async def _process_document(self, msg: dict, processor: LLMProcessor, resolver: EntityResolver):
-        result = await processor.process(msg.get("content", ""))
-        if not result.success:
-            logger.error(f"LLM processing failed: {result.error}")
-            return
-
-        entities = result.content.get("entities", [])
-        relations = result.content.get("relations", [])
-        logger.info(f"Extracted {len(entities)} entities, {len(relations)} relations")
-
-        if entities:
-            await self._resolve_and_save(entities, relations, resolver)
-
-    async def _resolve_and_save(self, entities: list, relations: list, resolver: EntityResolver):
-        input_data = ResolverInput(entities=entities, relations=relations)
-        output = await resolver.resolve(input_data)
-        await self._save_relations(output, resolver.postgres)
-        logger.info(f"Resolved to {len(output.decisions)} entities")
-
-    async def _save_relations(self, output, postgres_repo: PostgresRepo):
-        for rel in output.relations:
-            await postgres_repo.insert_relation(
-                subject_id=rel["subject"],
-                predicate=rel["predicate"],
-                object_id=rel["object"],
-            )
-        logger.info(f"Saved {len(output.relations)} relations")
-
     async def run(self):
-        processor = self._get_processor()
-        resolver = await self._get_resolver()
         async for msg in self.messages():
             if msg:
-                logger.info(f"Processing document for tenant: {msg.get('tenant_id')}")
-                await self._process_document(msg, processor, resolver)
+                logger.info(f"Received: {msg}")
 
     def close(self):
         if self.client:

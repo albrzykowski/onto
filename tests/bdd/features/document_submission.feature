@@ -1,8 +1,8 @@
 Feature: Document Submission
 
-  As a user of the ontology pipeline,
+  As a user of the pipeline,
   I want to submit documents for processing,
-  So that entities and relations can be extracted and stored.
+  So that they are queued for later consumption.
 
   Background:
     Given the API server is running
