@@ -45,13 +45,15 @@ docker-compose -f docker-compose.dev.yml down --remove-orphans -v
 
 ## Environment
 
-| Variable | Default |
-|----------|---------|
-| PULSAR_URL | pulsar://localhost:6650 |
-| PULSAR_ADMIN | http://localhost:8080 |
-| TOPIC_PREFIX | persistent://public/default |
-| HOST | 0.0.0.0 |
-| PORT | 8000 |
+| Variable | Default (Local) | Docker Override |
+|----------|-----------------|-----------------|
+| PULSAR_URL | pulsar://localhost:6650 | pulsar://host.docker.internal:6650 |
+| PULSAR_ADMIN | http://localhost:8080 | http://host.docker.internal:8080 |
+| TOPIC_PREFIX | persistent://public/default | (same) |
+| HOST | 0.0.0.0 | 0.0.0.0 |
+| PORT | 8000 | 8000 |
+
+**Note:** Docker services use `host.docker.internal` to reach Pulsar because container hostnames may not resolve in all Docker configurations. The `extra_hosts` directive in `docker-compose.dev.yml` maps this to the host gateway.
 
 ## Testing
 ### Unit Tests
@@ -65,6 +67,24 @@ Each scenario runs on a fresh Docker environment (clean after every scenario, st
 ```bash
 # 1. Run tests - environment.py automatically handles cleanup/start
 behave tests/bdd/features/ | tee /dev/null
+```
+
+## BDD Debugging
+
+The BDD test environment is fully automated via `tests/bdd/features/environment.py`:
+- `before_all`: Cleans up Docker containers from previous runs
+- `before_scenario`: Starts Docker services, waits for Pulsar health + API readiness
+- `after_scenario`: Stops and removes containers with volumes
+
+**Common issues:**
+1. **Pulsar not ready**: Check `docker logs pulsar-e2e` for startup issues
+2. **API returns 503**: Pulsar may not be reachable; verify `host.docker.internal` mapping in `docker-compose.dev.yml`
+3. **Tests hang**: Producer timeouts may be too long; check `app/queue/producer.py` timeout values
+4. **Hook failures**: Never use `check=True` on subprocess docker commands in `environment.py` - they may fail expectedly
+
+**Manual cleanup if needed:**
+```bash
+docker compose -f docker-compose.dev.yml down --remove-orphans -v
 ```
 
 ## Test Conventions

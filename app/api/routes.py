@@ -40,7 +40,7 @@ def create_document(doc: DocumentRequest):
         topic = f"{TOPIC_PREFIX}/tenant-{doc.tenant_id}"
         producer.send(topic=topic, msg={**doc.model_dump(), "job_id": job.job_id})
 
-        return {"job_id": job.job_id, "status": "queued", "tenant_id": doc.tenant_id}
+        return {"job_id": job.job_id, "status": "accepted", "tenant_id": doc.tenant_id}
     except PulsarConnectionError as e:
         log.error(f"Pulsar unavailable: {e}")
         # Update job status to failed

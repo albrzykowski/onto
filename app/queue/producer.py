@@ -8,8 +8,8 @@ from app.logger import get_logger
 
 logger = get_logger(__name__)
 
-CONNECTION_TIMEOUT_SECONDS = 3
-OPERATION_TIMEOUT_SECONDS = 3
+CONNECTION_TIMEOUT_SECONDS = 1
+OPERATION_TIMEOUT_SECONDS = 2
 
 
 class PulsarConnectionError(Exception):

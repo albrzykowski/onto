@@ -124,7 +124,7 @@ Response:
 ```json
 {
   "job_id": "abc-123",
-  "status": "queued",
+  "status": "accepted",
   "tenant_id": "my-tenant"
 }
 ```
@@ -163,7 +163,7 @@ Submit a document for ontology extraction.
 ```json
 {
   "job_id": "job-xyz",
-  "status": "queued",
+  "status": "accepted",
   "tenant_id": "tenant-abc"
 }
 ```
@@ -177,6 +177,10 @@ Submit a document for ontology extraction.
 
 1. **Producer** sends documents to Pulsar topic per tenant
 2. **Consumer** reads messages and logs them to console
+
+## Docker Networking
+
+When running in Docker (via `docker-compose.dev.yml`), services use `host.docker.internal` to connect to Pulsar instead of container names. This is because the Pulsar container may not be reachable by hostname from other containers in certain Docker configurations. The `extra_hosts` directive maps `host.docker.internal` to the host gateway, allowing containers to access Pulsar on `localhost:6650` and `localhost:8080`.
 
 ## Testing
 
