@@ -70,11 +70,11 @@ class TestProducer:
         p = Producer()
         p.client = mock_pulsar_client.return_value
 
-        # When
-        # Then
+        # When # Then
         with pytest.raises(Exception) as exc_info:
             p.send("topic-test", {"test": 1})
         assert "failed" in str(exc_info.value).lower()
+        assert mock_sleep.call_count == EXPECTED_RETRY_COUNT - 1
 
     @patch("pulsar.Client")
     def test_get_producer_creates_new(self, mock_pulsar_client):

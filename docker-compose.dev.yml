@@ -1,8 +1,10 @@
 services:
   pulsar:
     image: apachepulsar/pulsar:3.1.0
-    container_name: pulsar-e2e
-    command: bin/pulsar standalone
+    container_name: pulsar-dev
+    command: bin/pulsar standalone -nss
+    environment:
+      - PULSAR_MEM=-Xms256m -Xmx512m
     ports:
       - "6650:6650"
       - "8080:8080"
@@ -12,13 +14,13 @@ services:
       timeout: 5s
       retries: 15
     networks:
-      - onto-e2e
+      - onto-dev
 
   consumer:
     build:
       context: .
       dockerfile: Dockerfile.consumer
-    container_name: consumer-e2e
+    container_name: consumer-dev
     depends_on:
       pulsar:
         condition: service_healthy
@@ -30,7 +32,7 @@ services:
     extra_hosts:
       - "host.docker.internal:host-gateway"
     networks:
-      - onto-e2e
+      - onto-dev
     restart: on-failure
     command: ["python", "-m", "app.queue.consumer"]
 
@@ -38,7 +40,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.api
-    container_name: api-e2e
+    container_name: api-dev
     ports:
       - "8000:8000"
     depends_on:
@@ -52,9 +54,9 @@ services:
     extra_hosts:
       - "host.docker.internal:host-gateway"
     networks:
-      - onto-e2e
+      - onto-dev
     restart: on-failure
 
 networks:
-  onto-e2e:
+  onto-dev:
     driver: bridge

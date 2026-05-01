@@ -3,14 +3,20 @@
 ## Commands
 
 ```bash
-# Run unit and BDD tests
-pytest tests/ -v
+# Run unit tests
+pytest tests/unit/ -v
+
+# Run BDD tests (requires behave installed)
+behave tests/bdd/features/ | tee /dev/null
+# Verify BDD pass: exit code 0, output shows "X scenarios passed, 0 failed"
 
 # Run lint
 ruff check app/
 ```
 
 **Always run these after code changes to verify correctness.**
+
+**Prerequisites for BDD tests:** `pip install behave`
 
 ## Commit Messages
 

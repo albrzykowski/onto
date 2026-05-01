@@ -1,9 +1,12 @@
 """Step definitions for document submission feature."""
 
+import subprocess
+import time
+
 import requests
 from behave import given, then, when
 
-API_BASE_URL = "http://localhost:8000"
+from tests.bdd.features.steps.common import API_BASE_URL, get_response
 
 
 @given("the API server is running")
@@ -20,16 +23,14 @@ def step_api_server_running(context):
 @given("Pulsar message broker is available")
 def step_pulsar_available(context):
     """Verify Pulsar is available via Docker container inspection."""
-    import subprocess
-    import time
-
     max_retries = 15
     for attempt in range(max_retries):
         result = subprocess.run(
-            ["docker", "inspect", "--format={{.State.Health.Status}}", "pulsar-e2e"],
+            ["docker", "inspect", "--format={{.State.Health.Status}}", "pulsar-dev"],
             capture_output=True,
             text=True,
             timeout=5,
+            check=False,
         )
         output = result.stdout.strip()
         if "healthy" in output.lower():
@@ -38,10 +39,11 @@ def step_pulsar_available(context):
             time.sleep(2)
 
     result = subprocess.run(
-        ["docker", "inspect", "--format={{.State.Running}}", "pulsar-e2e"],
+        ["docker", "inspect", "--format={{.State.Running}}", "pulsar-dev"],
         capture_output=True,
         text=True,
         timeout=5,
+        check=False,
     )
     assert "true" in result.stdout.lower(), (
         f"Pulsar container not running: {result.stdout}"
@@ -51,9 +53,7 @@ def step_pulsar_available(context):
 @given("Pulsar message broker is unavailable")
 def step_pulsar_unavailable(context):
     """Simulate Pulsar being unavailable by stopping the service."""
-    import subprocess
-
-    subprocess.run(["docker", "stop", "pulsar-e2e"], capture_output=True)
+    subprocess.run(["docker", "stop", "pulsar-dev"], capture_output=True, check=False)
     context.pulsar_stopped = True
 
 
@@ -134,13 +134,7 @@ def step_response_validation_error(context):
 @then("the response should include an error message")
 def step_response_has_error_message(context):
     """Verify response includes error message."""
-    if hasattr(context, "readiness_response"):
-        response = context.readiness_response
-    elif hasattr(context, "last_response"):
-        response = context.last_response
-    else:
-        raise AssertionError("No response available in context")
-
+    response = get_response(context)
     data = response.json()
     assert "error" in data or "detail" in data, (
         f"Response missing error message: {data}"

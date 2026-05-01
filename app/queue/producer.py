@@ -9,7 +9,8 @@ from app.logger import get_logger
 logger = get_logger(__name__)
 
 CONNECTION_TIMEOUT_SECONDS = 1
-OPERATION_TIMEOUT_SECONDS = 2
+OPERATION_TIMEOUT_SECONDS = 1
+RETRY_DELAY_SECONDS = 0.5
 
 
 class PulsarConnectionError(Exception):
@@ -48,7 +49,7 @@ class Producer:
         if "connection" in str(e).lower() or "timeout" in str(e).lower():
             self._reconnect()
         if attempt < self.retries - 1:
-            time.sleep(1)
+            time.sleep(RETRY_DELAY_SECONDS)
 
     def _reconnect(self):
         try:

@@ -192,9 +192,15 @@ ruff check app/
 
 ### BDD Tests
 Each scenario runs on a fresh Docker environment (clean after every scenario, start before every scenario).
+
+**Prerequisites:** `pip install behave`
+
 ```bash
-# Run tests - environment.py automatically handles cleanup/start
+# 1. Run tests - environment.py automatically handles cleanup/start
 behave tests/bdd/features/ | tee /dev/null
+
+# 2. Verify pass: check exit code (should be 0) and output shows "X scenarios passed, 0 failed"
+echo $?
 ```
 
 ## Project Structure

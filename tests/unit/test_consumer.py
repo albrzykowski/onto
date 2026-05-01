@@ -15,18 +15,17 @@ class MockMessage:
         return self._data
 
 
-def collect_messages(consumer, limit):
-    async def run():
-        msgs = []
-        count = 0
-        async for msg in consumer.messages():
-            if msg is not None:
-                msgs.append(msg)
-                count += 1
-            if count >= limit:
-                break
-        return msgs
-    return asyncio.run(run())
+async def collect_messages(consumer, limit):
+    """Collect messages from consumer async generator."""
+    msgs = []
+    count = 0
+    async for msg in consumer.messages():
+        if msg is not None:
+            msgs.append(msg)
+            count += 1
+        if count >= limit:
+            break
+    return msgs
 
 
 class TestConsumer:
@@ -42,7 +41,7 @@ class TestConsumer:
         c._topics = MagicMock(return_value=["persistent://public/default/tenant-a"])
 
         # When
-        messages = collect_messages(c, 1)
+        messages = asyncio.run(collect_messages(c, 1))
 
         # Then
         assert len(messages) == 1
@@ -58,7 +57,7 @@ class TestConsumer:
         c._topics = MagicMock(return_value=["persistent://public/default/tenant-a"])
 
         # When
-        messages = collect_messages(c, 1)
+        messages = asyncio.run(collect_messages(c, 1))
 
         # Then
         assert len(messages) == 0
@@ -96,8 +95,5 @@ class TestConsumer:
         # Given
         c = Consumer()
 
-        # When
-        c.close()
-
-        # Then
-        # Should not raise
+        # When # Then
+        c.close()  # Should not raise

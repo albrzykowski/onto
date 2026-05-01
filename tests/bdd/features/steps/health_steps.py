@@ -1,11 +1,12 @@
 """Step definitions for health monitoring feature."""
 
+import subprocess
 import time
 
 import requests
 from behave import given, then, when
 
-API_BASE_URL = "http://localhost:8000"
+from tests.bdd.features.steps.common import API_BASE_URL, get_response
 
 
 @given("the system has processed multiple requests")
@@ -39,13 +40,7 @@ def step_response_has_status(context, status):
 @then("the response should be HTTP {status_code:d}")
 def step_response_http_status(context, status_code):
     """Verify HTTP status code."""
-    if hasattr(context, "readiness_response"):
-        response = context.readiness_response
-    elif hasattr(context, "health_response"):
-        response = context.health_response
-    else:
-        raise AssertionError("No response available in context")
-
+    response = get_response(context)
     assert response.status_code == status_code, (
         f"Expected {status_code}, got {response.status_code}"
     )
@@ -105,7 +100,5 @@ def step_pulsar_connections_stable(context):
 @given("Pulsar message broker has connection timeout")
 def step_pulsar_timeout(context):
     """Simulate Pulsar connection timeout by stopping Pulsar."""
-    import subprocess
-
-    subprocess.run(["docker", "stop", "pulsar-e2e"], capture_output=True)
+    subprocess.run(["docker", "stop", "pulsar-dev"], capture_output=True, check=False)
     time.sleep(2)

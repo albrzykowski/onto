@@ -1,13 +1,12 @@
 """Unit tests for routes."""
+import socket
 from unittest.mock import MagicMock, patch
 
+import pytest
 from fastapi import HTTPException
 
 from app.api.routes import create_document, health, ready
 from app.schemas.document import DocumentRequest
-
-STATUS_SERVICE_UNAVAILABLE = 503
-STATUS_INTERNAL_SERVER_ERROR = 500
 
 
 class TestHealth:
@@ -32,18 +31,25 @@ class TestReady:
             # Then
             assert result["status"] == "ready"
 
-    @patch("app.api.routes.socket.socket")
-    def test_returns_503_on_failure(self, mock_socket):
+    def test_returns_503_on_failure(self):
         # Given
-        mock_sock = MagicMock()
-        mock_socket.return_value = mock_sock
-        mock_sock.connect_ex.return_value = 1
-        # When
+        real_socket = socket.socket
+
+        class FailingSocket:
+            def settimeout(self, x): pass
+            def connect_ex(self, x): return 1
+            def connect(self, x): raise OSError("Connection refused")
+            def close(self): pass
+
+        socket.socket = lambda *a, **kw: FailingSocket()
+
         try:
-            ready()
-        except HTTPException as e:
-            # Then
-            assert e.status_code == STATUS_SERVICE_UNAVAILABLE
+            # When # Then
+            with pytest.raises(HTTPException) as exc_info:
+                ready()
+            assert exc_info.value.status_code == 503
+        finally:
+            socket.socket = real_socket
 
 
 class TestCreateDocument:
@@ -62,10 +68,8 @@ class TestCreateDocument:
     def test_returns_500_on_error(self, mock_producer):
         # Given
         mock_producer.send.side_effect = Exception("fail")
-        try:
-            # When
-            doc = DocumentRequest(tenant_id="test", content="hello world")
+        doc = DocumentRequest(tenant_id="test", content="hello world")
+        # When # Then
+        with pytest.raises(HTTPException) as exc_info:
             create_document(doc)
-        except HTTPException as e:
-            # Then
-            assert e.status_code == STATUS_INTERNAL_SERVER_ERROR
+        assert exc_info.value.status_code == 500
