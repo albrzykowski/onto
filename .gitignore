@@ -219,7 +219,7 @@ __marimo__/
 # Custom
 prompt.txt
 PROMPT.md
-.opencode/
+# .opencode/
 opencode.config.json
 requirements-opencode.txt
 logs.txt
