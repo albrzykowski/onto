@@ -4,8 +4,8 @@
 
 > [!WARNING]
 > **Early stage — this README is mostly a design document.** Only configuration
-> loading and document ingestion are implemented and covered by acceptance tests.
-> Everything else (CLI, LLM extraction, T-Box/A-Box generation, chunking,
+> loading, document ingestion and chunking are implemented and covered by
+> acceptance tests. Everything else (CLI, LLM extraction, T-Box/A-Box generation,
 > provenance, deduplication, both build modes) is **planned**; the sections
 > describing it are marked 🚧. See [Implementation status](#-implementation-status).
 
@@ -15,7 +15,7 @@
 | -------------------- | ---------------- | --------------------------- |
 | Configuration        | ✅ implemented   | `features/config-loading.feature`     |
 | Document ingestion   | ✅ implemented   | `features/document-ingestion.feature` |
-| Chunking             | 🚧 planned       | `features/chunking.feature`           |
+| Chunking             | ✅ implemented   | `features/chunking.feature`           |
 | LLM extraction       | 🚧 planned       | `features/llm-extraction.feature`     |
 | T-Box generation     | 🚧 planned       | `features/tbox-generation.feature`    |
 | A-Box generation     | 🚧 planned       | `features/abox-generation.feature`    |
@@ -36,6 +36,7 @@ tests today; the 🚧 rows have written criteria but no implementation.
 - Loads `.txt`, `.md`, `.pdf`, `.docx` documents from a given folder (recursively)
 - Configurable ontology scope via YAML: domains (with descriptions), allowed classes and relations
 - Document fingerprints — SHA-256 of the extracted text, stable across re-saves of the same file
+- Fixed-size chunking with configurable overlap, and stable `<path>#c<N>` chunk identifiers
 
 ### 🚧 Planned
 
@@ -45,7 +46,7 @@ tests today; the 🚧 rows have written criteria but no implementation.
   - **Override** — the ontology is rebuilt from scratch
   - **Update** — the existing ontology is extended with new data (deduplication: embeddings + LLM verification)
 - Full provenance log: every ontology change is linked to the source document, chunk, **and the exact text excerpt it was derived from**
-- Large corpus support (1000+ documents): chunking, batching, skipping unchanged files
+- Large corpus support (1000+ documents): LLM batching, skipping unchanged files
 - Class and relation names in English (ontology standard); source texts may be in any language
 
 ## 🔧 Stack (OpenSource only — Apache-2.0 / MIT / MPL-2.0 only, **no BSD**)
@@ -58,6 +59,7 @@ tests today; the 🚧 rows have written criteria but no implementation.
 | `pdfminer.six`                           | MIT              | ✅ PDF ingestion |
 | `python-docx`                            | MIT              | ✅ DOCX ingestion |
 | `pytest`, `pytest-bdd`                   | MIT              | ✅ test suite |
+| `mypy`, `ruff`                           | MIT              | ✅ lint & type checks |
 | `anthropic`                              | MIT              | 🚧 planned |
 | `linkml`, `linkml-runtime`               | Apache-2.0 / CC0 | 🚧 planned |
 | `sentence-transformers` (or `fastembed`) | Apache-2.0       | 🚧 planned |
@@ -131,7 +133,12 @@ allowed_relations: [produced_by, has_engine, uses_fuel]
 # Mode: override | update          (default: override)
 mode: update
 
+# Chunking — a document is split into windows of max_chunk_tokens tokens,
+# each starting overlap_tokens before the previous one ended.
 chunking_strategy: fixed           # fixed | semantic
+max_chunk_tokens: 2000
+overlap_tokens: 200
+
 similarity_threshold: 0.85
 
 # The API key. Leave it out to read ANTHROPIC_API_KEY from the environment.
@@ -154,6 +161,8 @@ Three scoping modes for the extraction prompt:
 | `domain_descriptions`  | `dict[str, str]`     | `{}`        |
 | `mode`                 | `str`                | `"override"` |
 | `chunking_strategy`    | `str`                | `"fixed"`   |
+| `max_chunk_tokens`     | `int`                | `2000`      |
+| `overlap_tokens`       | `int`                | `200`       |
 | `similarity_threshold` | `float`              | `0.85`      |
 | `api_key`              | `str \| None`        | env var     |
 
@@ -281,6 +290,74 @@ except DocumentLoadError as error:
 Discovery order is deterministic (`sorted()` over the directory tree), so repeated
 runs over an unchanged corpus produce identical document lists.
 
+## ✂️ Chunking
+
+✅ Implemented — `onto/chunking.py`
+
+`chunk_document` splits one document into overlapping, size-limited chunks. It
+takes a `Document` (from ingestion) and a `BuilderConfig`:
+
+```python
+from pathlib import Path
+
+from onto.chunking import chunk_document
+from onto.config import load_config
+from onto.ingestion import load_documents
+
+config = load_config("config.yaml")
+
+for document in load_documents(Path("./corpus")):
+    for chunk in chunk_document(document, config):
+        print(chunk.chunk_id, chunk.token_count)
+```
+
+### The `Chunk` model
+
+| Attribute     | Type   | Meaning                                                       |
+| ------------- | ------ | ------------------------------------------------------------- |
+| `chunk_id`    | `str`  | `<source_path>#c<N>`, numbered from 1                          |
+| `text`        | `str`  | the chunk's slice of the document                             |
+| `source_path` | `Path` | the document this chunk came from                             |
+| `token_count` | `int`  | number of tokens in `text`                                    |
+
+Because chunk identifiers embed the source path, they are stable across runs and
+can be stored in the provenance log as-is. They are **1-based**: the first chunk
+of `corpus/a.txt` is `corpus/a.txt#c1`.
+
+### How the fixed strategy works
+
+The document is split into windows of at most `max_chunk_tokens` tokens. Each
+window after the first starts `overlap_tokens` *before* the previous one ended,
+so consecutive chunks share exactly `overlap_tokens` tokens at their boundary —
+a sentence straddling a boundary is present in full in one of them.
+
+With `max_chunk_tokens: 100` and `overlap_tokens: 20`:
+
+| Document size | Chunks | Chunk sizes          |
+| ------------- | ------ | -------------------- |
+| 50 tokens     | 1      | 50                   |
+| 100 tokens    | 1      | 100                  |
+| 250 tokens    | 3      | 100, 100, **90**     |
+| 300 tokens    | 4      | 100, 100, 100, **60** |
+
+Coverage is complete — no token of the source document is ever dropped, and with
+`overlap_tokens: 0` the chunks are an exact partition of the text. A document
+with no text yields no chunks.
+
+### What a "token" is here
+
+**Tokens are whitespace-delimited words, not model tokens.** This is an
+approximation: a real tokenizer for the target model would count differently, so
+`max_chunk_tokens: 2000` is not a guarantee of 2000 model tokens. `tokenize` and
+`count_tokens` in `onto/chunking.py` are the single place to swap when a real
+tokenizer becomes available. Chunk boundaries, overlap and identifiers are all
+computed from that one function, so replacing it changes nothing else.
+
+`chunk_document` raises `ChunkError` when the configuration cannot produce
+chunks: an unsupported `chunking_strategy` (only `fixed` is implemented),
+`max_chunk_tokens` below 1, or `overlap_tokens` not in `0..max_chunk_tokens - 1`
+— the last one would otherwise loop forever.
+
 ## 📁 Output structure
 
 🚧 **Planned** — no build pipeline exists yet, so nothing writes this directory.
@@ -314,13 +391,23 @@ Every event (creation/update/merge of a class, relation, or instance) is recorde
 
 ## 🧪 Tests
 
-The project is built using the **ATDD** cycle — see `AGENTS.md` and the `features/` directory. 2 of the 10 features currently have acceptance tests (configuration loading, document ingestion).
+The project is built using the **ATDD** cycle — see `AGENTS.md` and the `features/` directory. 3 of the 10 features currently have acceptance tests (configuration loading, document ingestion, chunking).
 
 **Use the virtual environment `.venv` to run tests:**
 
 ```bash
 source .venv/bin/activate
 pytest features/ -v
+```
+
+**Static analysis** — `mypy` and `ruff` are configured in `pyproject.toml` and
+are dev-only, not runtime dependencies:
+
+```bash
+pip install --group dev
+source .venv/bin/activate
+ruff check .
+mypy onto features conftest.py
 ```
 
 ## 📜 License

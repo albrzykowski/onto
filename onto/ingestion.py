@@ -51,7 +51,7 @@ def _load_docx(path: Path) -> str:
     return "\n".join(paragraph.text for paragraph in paragraphs)
 
 
-LOADERS = {
+_LOADERS = {
     ".txt": _load_plain_text,
     ".md": _load_plain_text,
     ".pdf": _load_pdf,
@@ -61,7 +61,7 @@ LOADERS = {
 
 def load_document(path: Path) -> Document:
     """Load a single supported document and fingerprint its text."""
-    loader = LOADERS.get(path.suffix.lower())
+    loader = _LOADERS.get(path.suffix.lower())
     if loader is None:
         raise UnsupportedFormatError(f"unsupported file format: {path.name}")
     try:

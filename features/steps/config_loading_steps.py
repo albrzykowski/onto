@@ -2,17 +2,14 @@ from pathlib import Path
 
 import pytest
 import yaml
-from pytest_bdd import given, when, then
+from pytest_bdd import given, then, when
 
 from onto.config import ConfigValidationError, MissingAPIKeyError, load_config
-
 
 TEST_API_KEY = "sk-ant-test"
 
 
-def write_config(config_path: Path, data: dict, *, with_api_key: bool = True) -> None:
-    if with_api_key:
-        data = {**data, "api_key": TEST_API_KEY}
+def write_config(config_path: Path, data: dict) -> None:
     config_path.write_text(yaml.safe_dump(data), encoding="utf-8")
 
 
@@ -55,7 +52,7 @@ def step_given_config_invalid_mode(config_path):
 
 @given("the configuration does not contain an api_key")
 def step_given_config_without_api_key(config_path):
-    write_config(config_path, {"mode": "override"}, with_api_key=False)
+    write_config(config_path, {"mode": "override"})
 
 
 # Given: environment

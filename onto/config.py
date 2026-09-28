@@ -23,6 +23,8 @@ class BuilderConfig(BaseModel):
     domain_descriptions: dict[str, str] = Field(default_factory=dict)
     mode: str = "override"
     chunking_strategy: str = "fixed"
+    max_chunk_tokens: int = 2000
+    overlap_tokens: int = 200
     similarity_threshold: float = 0.85
     api_key: str | None = Field(default=None, validate_default=True)
 

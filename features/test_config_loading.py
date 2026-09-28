@@ -1,7 +1,9 @@
 """Acceptance tests binding Gherkin scenarios to pytest fixtures."""
 
-from features.steps.config_loading_steps import *  # noqa: F401,F403
 from pytest_bdd import scenario
+
+from features.steps.config_loading_steps import *  # noqa: F401,F403
+
 
 @scenario("config-loading.feature", "Loading a full configuration")
 def test_loading_a_full_configuration():

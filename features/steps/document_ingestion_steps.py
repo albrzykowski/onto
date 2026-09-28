@@ -7,16 +7,13 @@ import pytest
 from docx import Document as DocxDocument
 from pytest_bdd import given, parsers, then, when
 
+from features.steps.support import quoted
 from onto.ingestion import NoDocumentsFoundError, load_documents
 
 SAMPLE_TEXT = "A combustion engine converts chemical energy into mechanical motion."
 
 FILE_NAME = r'"([^"]+)"'
 FILE_LIST = r'"[^"]+"(?:\s*(?:,|and)\s*"[^"]+")*'
-
-
-def quoted(group: str) -> str:
-    return rf'"(?P<{group}>[^"]+)"'
 
 
 def build_pdf(text: str) -> bytes:
@@ -65,12 +62,6 @@ def create_file(path: Path) -> None:
         path.write_bytes(b"\x89PNG\r\n\x1a\n not a real image")
 
 
-def create_directory(workdir: Path, name: str) -> Path:
-    path = workdir / name
-    path.mkdir(parents=True, exist_ok=True)
-    return path
-
-
 def loaded_documents(state: dict) -> list:
     assert state["error"] is None, f"ingestion failed: {state['error']!r}"
     return state["documents"]
@@ -83,13 +74,9 @@ def logged_messages(caplog: pytest.LogCaptureFixture, level: int) -> list[str]:
 # Given: input directories
 
 @given(parsers.re(rf'an empty input directory {quoted("name")}'))
-def step_given_empty_input_directory(workdir: Path, name: str):
-    create_directory(workdir, name)
-
-
 @given(parsers.re(rf'an input directory {quoted("name")} without files'))
-def step_given_input_directory_without_files(workdir: Path, name: str):
-    create_directory(workdir, name)
+def step_given_empty_input_directory(workdir: Path, name: str):
+    (workdir / name).mkdir(parents=True, exist_ok=True)
 
 
 # Given: documents
