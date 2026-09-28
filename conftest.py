@@ -31,3 +31,10 @@ def config(state: dict):
     """The successfully loaded configuration."""
     assert state["error"] is None, f"loading failed: {state['error']!r}"
     return state["config"]
+
+
+@pytest.fixture
+def workdir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    """Isolated working directory, so steps can use relative paths."""
+    monkeypatch.chdir(tmp_path)
+    return tmp_path
