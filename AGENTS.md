@@ -1,122 +1,98 @@
-# AGENTS.md
+# AGENTS.md — Instructions for the coding agent
 
-## Commands
+This file defines the working rules for the agent building the **Auto Ontology Builder** project (Python, LinkML, Anthropic LLM API). The agent works in an **ATDD (Acceptance Test-Driven Development)** cycle.
 
+## 🔄 Working cycle (ATDD) — mandatory
+
+For **each** feature file in `features/`, in alphabetical order or per the dependency order below:
+
+1. **Read the feature** — the `.feature` (Gherkin) file and any related step definitions (`features/steps/`).
+2. **Run the tests** — all scenarios in that feature fail because the steps are not implemented.
+3. **Implement the steps** — add step definitions in `features/steps/*.py` (pytest-bdd). Run the tests — they still fail because the production code is missing.
+4. **Implement the solution** — the minimal code in the `onto` package that satisfies the scenarios. Run the tests — **they must pass**.
+5. **Refactor** — improve naming, remove duplication, extract modules. **Run the tests again — they must pass.** Never refactor in a way that breaks or skips tests.
+
+Forbidden: implementing a feature without running tests, writing speculative production code, editing `.feature` files to make tests easier.
+NEVER Edit `.feature` files!
+
+## 📦 Feature dependencies (implementation order)
+
+```
+config-loading → document-ingestion → chunking → llm-extraction
+                                              → tbox-generation → abox-generation
+                                              → provenance-logging
+                            update-mode (requires: tbox + abox + provenance)
+                            override-mode (requires: tbox + abox)
+                            cli (last)
+```
+
+## 🏗️ Project structure
+
+```
+onto/
+├── __init__.py
+├── config.py          # BuilderConfig (pydantic), YAML loading, validation
+├── ingestion.py       # txt/md/pdf/docx loading, fingerprinting
+├── chunking.py        # fixed/semantic chunking
+├── extraction.py      # LLM calls (anthropic), prompts, batching
+├── schema_gen.py      # T-Box — LinkML schema generation
+├── instance_gen.py    # A-Box — LinkML instance generation
+├── dedup.py           # embeddings, similarity threshold, LLM verification
+├── provenance.py      # JSONL event log
+├── builder.py         # orchestration: override/update
+└── cli.py             # typer CLI (`onto build`, `onto update`)
+features/
+├── *.feature
+└── steps/
+```
+
+## 🎯 Engineering principles
+
+- **KISS, YAGNI, DRY.** Minimalism and reusability first. No abstractions, options, or configuration knobs beyond what the features require. When two pieces of code repeat, extract; when a rule exists once, don't generalize it.
+- Python 3.11+, full type hints, `pydantic` v2.
+- All code, identifiers, and comments in **English**. Class names `PascalCase`, relations/slots `snake_case`.
+
+## 🤖 LLM prompt scoping — three modes
+
+The extraction prompt is built from the configuration with exactly three scoping levels:
+
+1. `allowed_classes` / `allowed_relations` **and** domains set → the prompt instructs the LLM to use **only** the predefined concepts. For prompt-efficiency, the LLM must never propose anything outside the allow-lists.
+2. Domains (with their descriptions) set, no allow-lists → the prompt instructs the LLM to extract whatever concepts are relevant **within those domains**. A `domains: [automotive]` prompt must never yield `Recipe`.
+3. Neither domains nor allow-lists → the LLM decides which concepts and relations are significant on its own.
+
+Domain descriptions from `config.yaml` are always injected into the prompt when domains are set.
+
+## 🧪 Testing
+
+**Always use the virtual environment `.venv` for all operations.**
+
+Run all tests:
 ```bash
-# Run unit tests
-pytest tests/unit/ -v
-
-# Run BDD tests (requires behave installed)
-behave tests/bdd/features/ | tee /dev/null
-# Verify BDD pass: exit code 0, output shows "X scenarios passed, 0 failed"
-
-# Run lint
-ruff check app/
+source .venv/bin/activate
+pytest features/ -v
 ```
 
-**Always run these after code changes to verify correctness.**
-
-**Prerequisites for BDD tests:** `pip install behave`
-
-## Commit Messages
-
-Follow Conventional Commits format:
-```
-<type>: <description>
-
-Types: feat, feat!, fix, test, refactor, docs, chore, style, perf, ci, build, revert
-```
-
-Examples:
-- `feat: add new endpoint for documents`
-- `feat!: rename REST API endpoint for documents creation`
-- `fix: resolve API key not loading`
-- `test: add unit tests for LLMProcessor`
-- `docs: update README with setup instructions`
-- `chore: add pytest-asyncio dependency`
-
-## Run Order
-
-Consumer must start before API (or concurrently): `python -m app.queue.consumer & python -m app.main`
-
-## Local Dev Environment
-
+Run tests for a specific feature:
 ```bash
-# Start all services
-docker-compose -f docker-compose.dev.yml up -d
-
-# Stop and cleanup
-docker-compose -f docker-compose.dev.yml down --remove-orphans -v
+source .venv/bin/activate
+pytest features/test_<feature_name>.py -v
 ```
 
-## Environment
+Tests **never** call the real Anthropic API. Replace the LLM client with a test double (`unittest.mock` / `pytest-mock`) in the step definitions — the business scenarios in `.feature` files speak only about what the language model "returns"/"is instructed to return", never about test doubles. Embeddings in tests: a fake/deterministic implementation (no model downloads in CI).
 
-| Variable | Default (Local) | Docker Override |
-|----------|-----------------|-----------------|
-| PULSAR_URL | pulsar://localhost:6650 | pulsar://host.docker.internal:6650 |
-| PULSAR_ADMIN | http://localhost:8080 | http://host.docker.internal:8080 |
-| TOPIC_PREFIX | persistent://public/default | (same) |
-| HOST | 0.0.0.0 | 0.0.0.0 |
-| PORT | 8000 | 8000 |
+**Note:** When defining steps for pytest-bdd, ensure that steps with the same text but different logic use unique function names or `target_fixture` to avoid conflicts.
 
-**Note:** Docker services use `host.docker.internal` to reach Pulsar because container hostnames may not resolve in all Docker configurations. The `extra_hosts` directive in `docker-compose.dev.yml` maps this to the host gateway.
+## 📜 Conventions
 
-## Testing
-### Unit Tests
-```bash
-pytest tests/unit/ -v
-ruff check app/
-```
+- Dependencies restricted to Apache-2.0 / MIT / MPL-2.0 licenses. **No BSD, no GPL/AGPL, no proprietary.**
+- User configuration only via YAML + the `ANTHROPIC_API_KEY` environment variable (never hard-coded).
+- Every ontology change (class, slot, instance) **must** carry provenance: source document path, chunk id, **and the source text excerpt** it was derived from.
+- A single failing document (corrupted PDF, etc.) must not abort the build — log and skip it.
+- Commit after every green ATDD cycle: `feat: <feature-name>` or `refactor: <feature-name>`.
 
-### BDD Tests
-Each scenario runs on a fresh Docker environment (clean after every scenario, start before every scenario).
-```bash
-# 1. Run tests - environment.py automatically handles cleanup/start
-behave tests/bdd/features/ | tee /dev/null
-```
+## ✅ Definition of done for a feature
 
-## BDD Debugging
-
-The BDD test environment is fully automated via `tests/bdd/features/environment.py`:
-- `before_all`: Cleans up Docker containers from previous runs
-- `before_scenario`: Starts Docker services, waits for Pulsar health + API readiness
-- `after_scenario`: Stops and removes containers with volumes
-
-**Common issues:**
-1. **Pulsar not ready**: Check `docker logs pulsar-e2e` for startup issues
-2. **API returns 503**: Pulsar may not be reachable; verify `host.docker.internal` mapping in `docker-compose.dev.yml`
-3. **Tests hang**: Producer timeouts may be too long; check `app/queue/producer.py` timeout values
-4. **Hook failures**: Never use `check=True` on subprocess docker commands in `environment.py` - they may fail expectedly
-
-**Manual cleanup if needed:**
-```bash
-docker compose -f docker-compose.dev.yml down --remove-orphans -v
-```
-
-## Test Conventions
-
-- Always use #Given #When #Then comments in tests
-- Example:
-  ```python
-  def test_example():
-
-      # Given (no additional comments here)
-      ...
-
-      # When (no additional comments here)
-      ...
-
-      # Then (no additional comments here)
-      ...
-  ```
-
-## Notes
-
-- mypy configured for Python 3.10 but runs on 3.14 locally (compatibility OK)
-- Ruff pylint rules enforce strict complexity (max-branches=5, max-locals=5, etc.)
-
-## Interaction Rules
-
-- When asked a question, answer first before making any code changes
-- Ask for confirmation before modifying code or committing
-- Example: "It's duplicate in README. Want me to remove it?"
+1. All scenarios of the `.feature` pass (`pytest features/ -k <feature>`).
+2. The whole existing suite passes (`pytest`).
+3. Code is typed, duplicate-free, and follows the conventions above.
+4. No new dependencies outside the list allowed in README.

@@ -1,8 +1,0 @@
--r requirements.txt
-
-pytest
-pytest-asyncio
-ruff
-mypy
-python-semantic-release
-psycopg2-binary

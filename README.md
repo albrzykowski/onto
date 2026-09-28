@@ -1,237 +1,149 @@
-# on:to
+# Auto Ontology Builder
 
-Production-ready pipeline to create ontology from documents.
+> A Python library that automatically builds an ontology (T-Box + A-Box) from unstructured text documents using an LLM (Anthropic Claude API). The ontology is described in **LinkML**.
 
-![Ruff](https://github.com/albrzykowski/onto/actions/workflows/lint.yml/badge.svg)
-![Tests](https://github.com/albrzykowski/onto/actions/workflows/tests.yml/badge.svg)
+## ✨ Features
 
-## What is this?
+- Loads `.txt`, `.md`, `.pdf`, `.docx` documents from a given folder (recursively)
+- Automatic extraction of classes, relations, and instances via LLM
+- **T-Box** (schema) and **A-Box** (instances) generated in LinkML format (YAML/JSON)
+- Two operating modes:
+  - **Override** — the ontology is rebuilt from scratch
+  - **Update** — the existing ontology is extended with new data (deduplication: embeddings + LLM verification)
+- Configurable ontology scope via YAML: domains (with descriptions), allowed classes and relations
+- Full provenance log: every ontology change is linked to the source document, chunk, **and the exact text excerpt it was derived from**
+- Large corpus support (1000+ documents): chunking, batching, fingerprinting (skipping unchanged files)
+- Class and relation names in English (ontology standard); source texts may be in any language
 
-on:to is a document processing pipeline that extracts structured ontology from text documents. It uses:
+## 🔧 Stack (OpenSource only — Apache-2.0 / MIT / MPL-2.0 only, **no BSD**)
 
-- **Apache Pulsar** - Message queue for async processing
 
-## Quick Start (Docker)
+| Component                                | License          |
+| ---------------------------------------- | ---------------- |
+| `anthropic`                              | MIT              |
+| `linkml`, `linkml-runtime`               | Apache-2.0 / CC0 |
+| `sentence-transformers` (or `fastembed`) | Apache-2.0       |
+| `pdfminer.six`                           | MIT              |
+| `python-docx`                            | MIT              |
+| `typer`                                  | MIT              |
+| `pydantic`                               | MIT              |
+| `pytest`, `pytest-bdd`                   | MIT              |
 
-Everything runs in Docker - no Python setup required:
 
-```bash
-# 1. Create .env with your API key
-echo "OPENAI_API_KEY=your-key" > .env
-
-# 2. Start all services (Pulsar, Consumer, API)
-docker compose up -d
-
-# 3. Send a document
-curl -X POST http://localhost:8000/documents \
-  -H "Content-Type: application/json" \
-  -d '{"tenant_id": "my-tenant", "content": "John works at Acme Corp."}'
-```
-
-The docker-compose includes:
-- `pulsar` - Message queue
-- `consumer` - Background worker (logs messages)
-- `api` - HTTP API server
-
-## Quick Start (Local Development)
-
-For development with hot-reload:
+## 🚀 Quick Start
 
 ```bash
-# 1. Start infrastructure only (Pulsar, Qdrant, PostgreSQL)
-docker compose -f docker-compose.dev.yml up -d pulsar qdrant postgres
-
-# 2. Install Python deps
-pip install -r requirements.txt
-
-# 3. Create .env with your API key
-echo "OPENAI_API_KEY=your-key" > .env
-
-# 4. Run consumer and API
-python -m app.queue.consumer &
-python -m app.main
+pip install -e .
+export ANTHROPIC_API_KEY="sk-ant-..."
 ```
 
-## Setup
-
-### Prerequisites
-
-- Python 3.10+
-- Docker & Docker Compose
-- OpenAI API key (or compatible LLM)
-
-### Installation
+Build an ontology (override mode):
 
 ```bash
-pip install -r requirements.txt
+onto build --config config.yaml --input ./corpus --output ./ontology
 ```
 
-### Environment Variables
-
-| Variable            | Required | Default                       | Description                    |
-|--------------------|----------|-------------------------------|--------------------------------|
-| `PULSAR_URL`       | No       | `pulsar://localhost:6650`      | Pulsar broker URL               |
-| `PULSAR_ADMIN`     | No       | `http://localhost:8080`       | Pulsar admin URL              |
-| `TOPIC_PREFIX`     | No       | `persistent://public/default` | Topic prefix for tenants       |
-| `HOST`             | No       | `0.0.0.0`                     | API server host               |
-| `PORT`             | No       | `8000`                        | API server port              |
-
-## Usage
-
-### Docker (Production)
+Update an existing ontology:
 
 ```bash
-# Start all services
-docker compose up -d
-
-# View logs
-docker compose logs -f
-
-# Stop
-docker compose down
+onto update --config config.yaml --input ./corpus_new --output ./ontology
 ```
 
-### Local Development
+As a library:
 
-```bash
-# Start infrastructure only
-docker compose -f docker-compose.dev.yml up -d pulsar qdrant postgres
+```python
+from onto import OntologyBuilder, BuilderConfig
 
-# Set your API key
-export OPENAI_API_KEY="sk-..."
-
-# Start the consumer (worker that processes messages)
-python -m app.queue.consumer &
-
-# Start the API server
-python -m app.main
+config = BuilderConfig.from_yaml("config.yaml")
+builder = OntologyBuilder(config)
+result = builder.build(input_dir="./corpus", output_dir="./ontology", mode="override")
 ```
 
-### Sending Documents
+## ⚙️ Configuration (`config.yaml`)
 
-Send documents to the pipeline via the API:
+```yaml
+# Domains of the ontology. Each domain has a name and a free-text description
+# that is injected into the LLM prompt to ground the extraction.
+# Three scoping modes are supported:
+#   1. domains + allowed_classes/allowed_relations  -> the LLM is constrained
+#      to the predefined concepts (prompt optimization: it never proposes extras)
+#   2. domains only                                  -> the LLM decides which
+#      concepts matter within each domain
+#   3. no domains, no allow-lists                    -> the LLM has full freedom
+domains:
+  - name: automotive
+    description: >
+      Passenger and commercial vehicles, their components (engines, drivetrains,
+      electronics), manufacturers, and fuel/propulsion types.
+  - name: supply_chain
+    description: >
+      Production networks, suppliers, factories, logistics of vehicle parts.
 
-```bash
-curl -X POST http://localhost:8000/documents \
-  -H "Content-Type: application/json" \
-  -d '{
-    "tenant_id": "my-tenant",
-    "content": "John works at Acme Corp as a software engineer."
-  }'
+# Optional restriction to specific classes and relations.
+# If set, the LLM is instructed to ONLY use these concepts.
+allowed_classes: [Vehicle, Engine, Manufacturer, FuelType]
+allowed_relations: [produced_by, has_engine, uses_fuel]
+
+# Mode: override | update
+mode: update
+
+llm:
+  model: claude-sonnet-4-5
+  max_tokens: 4096
+  batch_size: 20          # chunks/calls processed in batches
+  temperature: 0.0
+
+chunking:
+  strategy: fixed         # fixed | semantic
+  max_chunk_tokens: 2000
+  overlap_tokens: 200
+
+deduplication:
+  embedding_model: sentence-transformers/all-MiniLM-L6-v2
+  similarity_threshold: 0.85
+  llm_verify: true        # merge candidates are confirmed by the LLM
+
+paths:
+  output_dir: ./ontology
+  provenance_log: ./ontology/provenance.jsonl
 ```
 
-Response:
+## 📁 Output structure
+
+```
+ontology/
+├── schema.yaml          # T-Box — LinkML schema
+├── instances.yaml       # A-Box — LinkML instances
+├── provenance.jsonl     # build log (1 line = 1 event)
+└── state.json           # document fingerprints (for update mode)
+```
+
+## 🗒️ Provenance log
+
+Every event (creation/update/merge of a class, relation, or instance) is recorded as one JSONL entry. Each entry includes the **source text excerpt** the change was derived from:
+
 ```json
 {
-  "job_id": "abc-123",
-  "status": "accepted",
-  "tenant_id": "my-tenant"
+  "event": "class.created",
+  "id": "Vehicle",
+  "source_documents": [{"path": "corpus/article1.txt", "chunk_id": "article1.txt#c12"}],
+  "source_excerpt": "VW has been producing the Golf, a compact passenger car, since 1974.",
+  "timestamp": "2026-09-27T10:00:00Z",
+  "mode": "update"
 }
 ```
 
-### Checking Status
+## 🧪 Tests
+
+The project is built using the **ATDD** cycle — see `AGENTS.md` and the `features/` directory.
+
+**Use the virtual environment `.venv` to run tests:**
 
 ```bash
-# Health check
-curl http://localhost:8000/health
-
-# Readiness check
-curl http://localhost:8000/ready
+source .venv/bin/activate
+pytest features/ -v
 ```
 
-## API Endpoints
+## 📜 License
 
-| Method   | Endpoint         | Description                      |
-|----------|------------------|----------------------------------|
-| `GET`    | `/health`        | Liveness probe                   |
-| `GET`    | `/ready`         | Readiness probe (Pulsar check)   |
-| `POST`   | `/documents`     | Submit document for processing   |
-
-### POST /documents
-
-Submit a document for ontology extraction.
-
-**Request:**
-```json
-{
-  "tenant_id": "tenant-abc",
-  "content": "Your text content here..."
-}
-```
-
-**Response:**
-```json
-{
-  "job_id": "job-xyz",
-  "status": "accepted",
-  "tenant_id": "tenant-abc"
-}
-```
-
-**Error Responses:**
-- `400` - Invalid request body
-- `422` - Validation error
-- `503` - Pulsar not ready
-
-## How It Works
-
-1. **Producer** sends documents to Pulsar topic per tenant
-2. **Consumer** reads messages and logs them to console
-
-## Docker Networking
-
-When running in Docker (via `docker-compose.dev.yml`), services use `host.docker.internal` to connect to Pulsar instead of container names. This is because the Pulsar container may not be reachable by hostname from other containers in certain Docker configurations. The `extra_hosts` directive maps `host.docker.internal` to the host gateway, allowing containers to access Pulsar on `localhost:6650` and `localhost:8080`.
-
-## Testing
-
-### Unit Tests
-```bash
-pytest tests/unit/ -v
-ruff check app/
-```
-
-### BDD Tests
-Each scenario runs on a fresh Docker environment (clean after every scenario, start before every scenario).
-
-**Prerequisites:** `pip install behave`
-
-```bash
-# 1. Run tests - environment.py automatically handles cleanup/start
-behave tests/bdd/features/ | tee /dev/null
-
-# 2. Verify pass: check exit code (should be 0) and output shows "X scenarios passed, 0 failed"
-echo $?
-```
-
-## Project Structure
-
-```
-app/
-├── api/
-│   └── routes.py          # FastAPI routes
-├── jobs/
-│   └── store.py           # Job status tracking
-├── queue/
-│   ├── producer.py        # Pulsar producer
-│   └── consumer.py        # Pulsar consumer (logs messages)
-├── schemas/
-│   └── document.py        # Request schemas
-├── config.py              # Configuration
-├── logger.py              # Logging
-└── main.py                # App entrypoint
-
-tests/
-├── unit/                  # Unit tests
-└── bdd/
-    └── features/          # BDD test scenarios
-```
-
-## Features
-
-- Retry logic on send failure
-- Dynamic topic discovery
-- Configurable Pulsar admin URL
-- Custom topic prefix support
-- Graceful shutdown
-- Health checks
-- Input validation
+Apache-2.0
