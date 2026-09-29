@@ -1,3 +1,31 @@
+[project]
+name = "onto-builder"
+version = "0.1.0"
+description = "Build and update LinkML ontologies from documents, with an LLM"
+requires-python = ">=3.11"
+dependencies = [
+  "pdfminer.six",
+  "pydantic>=2",
+  "python-docx",
+  "PyYAML",
+]
+
+# the provider SDKs are what a build calls, and which of them is needed is named by
+# `provider` in the configuration, so none of them is required to install the library
+[project.optional-dependencies]
+mistral = ["mistralai>=1.12,<2"]
+openai = ["openai>=1"]
+
+[project.scripts]
+onto = "onto.cli:main"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+packages = ["onto"]
+
 [dependency-groups]
 dev = [
   "linkml>=1.8",

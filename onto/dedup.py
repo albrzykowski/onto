@@ -32,6 +32,10 @@ class Embedder(Protocol):
         ...
 
 
+class EmbeddingError(Exception):
+    """Raised when an embedding request fails — the unit a caller may retry."""
+
+
 class _Verdict(BaseModel):
     same_concept: bool = False
 

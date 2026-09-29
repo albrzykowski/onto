@@ -43,22 +43,24 @@ onto/
 ├── __init__.py
 ├── config.py          # BuilderConfig (pydantic), YAML loading, validation
 ├── ingestion.py       # txt/md/pdf/docx loading, fingerprinting
-├── chunking.py        # fixed/semantic chunking
+├── chunking.py        # fixed-size chunking
 ├── llm.py             # provider-neutral LLM contract (CompletionRequest, LLM, LLMError)
 ├── llm_openai.py      # OpenAI adapter for the LLM contract
 ├── llm_mistral.py     # Mistral adapter for the LLM contract
+├── embeddings.py      # embeddings adapters (Mistral, OpenAI) for the Embedder contract
 ├── extraction.py      # LLM calls, prompts, batching
 ├── schema_gen.py      # T-Box — LinkML schema generation
 ├── instance_gen.py    # A-Box — LinkML instance generation
-├── dedup.py           # embeddings, similarity threshold, LLM verification
+├── dedup.py           # similarity threshold, LLM verification (Embedder contract)
 ├── provenance.py      # JSONL event log
 ├── builder.py         # orchestration: override/update
-└── cli.py             # typer CLI (`onto build`, `onto update`)
+└── cli.py             # argparse CLI (`onto build`, `onto update`)
 features/
 ├── *.feature
 └── steps/
 tests/
-└── test_llm_adapters.py   # unit tests — adapters have no Gherkin contract
+├── test_llm_adapters.py       # unit tests — adapters have no Gherkin contract
+└── test_embedding_adapters.py  # unit tests — the same, for the Embedder contract
 ```
 
 ## 🎯 Engineering principles
@@ -152,7 +154,8 @@ Tests **never** call a real LLM API. Replace the model with a test double (`unit
 
 ## 📜 Conventions
 
-- Dependencies restricted to Apache-2.0 / MIT / MPL-2.0 licenses. **No BSD, no GPL/AGPL, no proprietary.**
+- Dependencies restricted to Apache-2.0 / MIT / MPL-2.0 licenses. **No BSD, no GPL/AGPL, no proprietary.** The CLI uses `argparse` from the standard library rather than typer, which is MIT but pulls in `click` (BSD-3-Clause) and `shellingham` (ISC).
+- **Exception — the schema linter.** `linkml` is Apache-2.0 and dev-only, but it requires `click` and `jinja2`, both BSD-3-Clause. It is kept because the T-Box scenarios validate the generated schema with it (`features/steps/tbox_generation_steps.py`), which no smaller dependency does. Nothing in `onto/` imports it: the exception covers the test toolchain alone, and drops out with the dev group.
 - User configuration only via YAML + the `ANTHROPIC_API_KEY` environment variable (never hard-coded).
 - Every ontology change (class, slot, instance) **must** carry provenance: source document path, chunk id, **and the source text excerpt** it was derived from.
 - A single failing document (corrupted PDF, etc.) must not abort the build — log and skip it.

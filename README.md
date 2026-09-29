@@ -6,23 +6,11 @@ unstructured text documents using an LLM of your choice. The ontology is written
 provenance: the source document, the chunk and the exact text excerpt it was derived
 from.
 
-The project is under active development. The library is usable programmatically;
-the command-line interface is not implemented yet.
+The project is under active development.
 
 ## Quick Start
 
-### Option A: Command-line interface
-
-The `onto` command is planned but does not exist yet — use Option B until it
-lands. The intended interface is:
-
-```bash
-onto build --input corpus/ --output ontology/
-```
-
-### Option B: Programmatic usage
-
-#### 1. Get the code and create a virtual environment
+### 1. Get the code and create a virtual environment
 
 ```bash
 git clone <repository-url> onto-builder
@@ -32,23 +20,20 @@ source .venv/bin/activate  # Linux/macOS
 .\.venv\Scripts\activate   # Windows
 ```
 
-The `onto` package runs straight from the repository root; it is not installed as
-a distribution yet.
-
-#### 2. Install the dependencies
+### 2. Install the library and the provider
 
 ```bash
-pip install pydantic pyyaml pdfminer.six python-docx mistralai
+pip install -e .[mistral]   # or .[openai]
 ```
 
-`mistralai` is needed only for the Mistral adapter — swap it for `anthropic` or
-`openai` if you build with another provider.
+Only the provider you name in the configuration has to be installed.
 
-#### 3. Configure the model and the API key
+### 3. Configure the model, the provider and the API key
 
 Create a `config.yaml` in the repository root:
 
 ```yaml
+provider: mistral
 model: mistral-large-latest
 chunking_strategy: fixed
 max_chunk_tokens: 2000
@@ -56,20 +41,16 @@ overlap_tokens: 200
 batch_size: 4
 mode: override
 similarity_threshold: 0.85
-api_key: "your_mistral_api_key"
+api_key: "your_api_key"
 ```
 
-Then export the key for the Mistral adapter:
+`provider` is `mistral` or `openai`: it is what decides which adapter answers the prompts
+and, in update mode, which one supplies the embeddings.
 
-```bash
-export MISTRAL_API_KEY="your_api_key"
-```
+The `api_key` field is what the adapter is given, so one key is all a build needs. Left out,
+the key is read from the `ANTHROPIC_API_KEY` environment variable.
 
-The `api_key` field is what the configuration validates against; the adapter
-itself reads `MISTRAL_API_KEY` from the environment when it is constructed
-without a key.
-
-#### 4. Prepare the input documents
+### 4. Prepare the input documents
 
 Put your documents in a folder — `.txt`, `.md`, `.pdf` and `.docx` are read
 recursively:
@@ -81,7 +62,17 @@ corpus/
 └── manual.pdf
 ```
 
-#### 5. Build the ontology
+### 5a. Build from the command line
+
+```bash
+onto build --config config.yaml --input corpus/ --output ontology/
+```
+
+`onto build` starts the ontology over. `onto update` extends the one already in the output
+directory, reading only the documents whose fingerprint it has not recorded. `onto --help`
+lists what is available.
+
+### 5b. Or build from Python
 
 ```python
 from pathlib import Path
@@ -91,14 +82,13 @@ from onto.config import load_config
 from onto.llm_mistral import MistralLLM
 
 config = load_config("config.yaml")
-llm = MistralLLM()
 
-build(input_dir=Path("corpus"), output_dir=Path("ontology"), config=config, llm=llm)
+build(input_dir=Path("corpus"), output_dir=Path("ontology"), config=config, llm=MistralLLM())
 ```
 
-`build` runs the whole pipeline — ingestion, chunking, extraction, T-Box, A-Box —
-in the mode `config.mode` names. The steps are also available one by one, if you want
-to inspect or change a stage:
+`build` runs the whole pipeline — ingestion, chunking, extraction, T-Box, A-Box — in the
+mode `config.mode` names. The steps are also available one by one, if you want to inspect
+or change a stage:
 
 ```python
 from onto.chunking import chunk_document
@@ -123,7 +113,7 @@ T-Box does not define is never written — it is rejected and logged as
 With `mode: override` (the default) that is all `build` does: it discards whatever the
 output directory held before.
 
-#### 6. Extend the ontology with new documents
+### 6. Extend the ontology with new documents
 
 `mode: update` reads only the documents whose fingerprint `ontology/state.json` does
 not record yet, and extends what is already there. The classes, slots and instances of
@@ -132,30 +122,29 @@ schema already has is merged into it, and a slot the new documents describe with
 type is put to the model to resolve. The provenance log of the earlier build is appended
 to, not replaced, and a run that finds nothing new writes nothing at all.
 
-Telling a repeated concept from a new one is done with embeddings, so update mode needs
-an object with an `embed` method — the `Embedder` protocol in `onto.dedup`. No embedding
-provider ships with the library yet, so bring your own:
+Telling a repeated concept from a new one is done with embeddings, so update mode is given
+an embedder. The one that ships takes them from the provider `provider` names, which means
+the build needs nothing beyond the key it already has:
 
 ```python
 from onto.builder import build
+from onto.embeddings import MistralEmbedder
 from onto.llm_mistral import MistralLLM
-
-class MyEmbedder:
-    """Turn concept names into vectors; their cosine similarity is what is compared."""
-
-    def embed(self, texts: list[str]) -> list[list[float]]:
-        ...
 
 build(
     input_dir=Path("corpus"),
     output_dir=Path("ontology"),
     config=config,
     llm=MistralLLM(),
-    embedder=MyEmbedder(),
+    embedder=MistralEmbedder(),
 )
 ```
 
-#### 7. Inspect the output
+Any object with an `embed` method will do — the `Embedder` protocol in `onto.dedup` is all
+`build` asks for, so an embedder that runs locally takes its place without anything else
+changing. The command line needs none of this: `onto update` builds the embedder itself.
+
+### 7. Inspect the output
 
 `ontology/schema.yaml` — the T-Box:
 
