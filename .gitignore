@@ -224,3 +224,4 @@ opencode.config.json
 requirements-opencode.txt
 logs.txt
 config.yaml
+corpus/
