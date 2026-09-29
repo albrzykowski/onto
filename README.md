@@ -48,7 +48,8 @@ api_key: "your_api_key"
 and, in update mode, which one supplies the embeddings.
 
 The `api_key` field is what the adapter is given, so one key is all a build needs. Left out,
-the key is read from the `ANTHROPIC_API_KEY` environment variable.
+the key is read from the `ANTHROPIC_API_KEY` environment variable. From the command line the
+adapter is built for you; from Python you pass `api_key=config.api_key` yourself.
 
 ### 4. Prepare the input documents
 
@@ -83,8 +84,13 @@ from onto.llm_mistral import MistralLLM
 
 config = load_config("config.yaml")
 
-build(input_dir=Path("corpus"), output_dir=Path("ontology"), config=config, llm=MistralLLM())
+llm = MistralLLM(api_key=config.api_key)
+build(input_dir=Path("corpus"), output_dir=Path("ontology"), config=config, llm=llm)
 ```
+
+Pass `api_key=config.api_key` to the adapter. The SDK does not pick the key up from
+the environment on its own, so leaving it out sends a request with no credentials and
+Mistral answers `Invalid API Key` — the same as a key that really is wrong.
 
 `build` runs the whole pipeline — ingestion, chunking, extraction, T-Box, A-Box — in the
 mode `config.mode` names. The steps are also available one by one, if you want to inspect
