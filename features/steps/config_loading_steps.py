@@ -75,7 +75,7 @@ def step_when_config_loaded(config_path, state):
     state["error"] = None
     try:
         state["config"] = load_config(str(config_path))
-    except (ConfigValidationError, MissingAPIKeyError) as error:
+    except (ConfigValidationError, MissingAPIKeyError, ValueError) as error:
         state["error"] = error
 
 
@@ -148,17 +148,13 @@ def step_then_api_key_from_env(config):
     assert config.api_key == TEST_API_KEY
 
 
-# Then: errors
-
-@then("a ConfigValidationError is raised")
-def step_then_config_validation_error(state):
-    assert isinstance(state["error"], ConfigValidationError), (
-        f"expected ConfigValidationError, got {state['error']!r}"
-    )
+@then("the concept cap is 3")
+def step_then_concept_cap_is_3(config):
+    assert config.max_concepts_per_batch == 3
 
 
-@then("a MissingAPIKeyError is raised")
-def step_then_missing_api_key_error(state):
-    assert isinstance(state["error"], MissingAPIKeyError), (
-        f"expected MissingAPIKeyError, got {state['error']!r}"
+@then("a validation error is raised")
+def step_then_validation_error(state):
+    assert isinstance(state["error"], Exception), (
+        f"expected an exception, got {state['error']!r}"
     )

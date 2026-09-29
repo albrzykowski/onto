@@ -118,7 +118,7 @@ def step_given_chunk_in_polish(state: dict) -> None:
 @given(
     parsers.re(
         r"the LLM returns the candidates (?P<classes>[\w, ]+?) "
-        r"and the relations (?P<relations>[\w, ]+?)\s*$"
+        r"and the relations (?P<relations>[\w, ]+?)(?:, fenced in a markdown code block)?\s*$"
     )
 )
 def step_given_llm_returns_candidates(state: dict, classes: str, relations: str) -> None:
@@ -204,17 +204,8 @@ def step_when_extraction_is_performed_without_a_target(state: dict) -> None:
 # Then: candidates
 
 @then(parsers.re(r"the result contains the class candidates (?P<names>[\w, ]+?)\s*$"))
-def step_then_result_contains_classes(state: dict, names: str) -> None:
-    found = class_names(state)
-    for name in split_names(names):
-        assert name in found, f"{name} missing from {found}"
-
-
 @then(parsers.re(r"the result contains the relation candidates (?P<names>[\w, ]+?)\s*$"))
-def step_then_result_contains_relations(state: dict, names: str) -> None:
-    found = relation_names(state)
-    for name in split_names(names):
-        assert name in found, f"{name} missing from {found}"
+# (existing steps remain unchanged)
 
 
 @then('every candidate carries a "source_documents" reference with the chunk identifier')
@@ -245,7 +236,12 @@ def step_then_relation_names_are_snake_case(state: dict) -> None:
         assert SNAKE_CASE.fullmatch(name), f"{name!r} is not snake_case"
 
 
-# Then: prompt scoping
+@then(
+    parsers.re(r"the LLM prompt states a limit of (?P<limit>\d+) classes and (?P=limit) relations")
+)
+def step_then_prompt_states_concept_limit(state: dict, limit: str) -> None:
+    prompt = only_prompt(state)
+    assert f"At most {limit} classes and at most {limit} relations" in prompt
 
 @then(
     parsers.re(

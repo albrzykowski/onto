@@ -50,9 +50,10 @@ def client_for(state: dict) -> FakeLLM:
 
 
 def build(state: dict, provenance_path: Path) -> None:
+    config = state.get("config") or BuilderConfig()
     state["instances_path"] = generate_abox(
         [make_chunk()],
-        BuilderConfig(),
+        config,
         client_for(state),
         Path(state["schema_path"]),
         ProvenanceLog(provenance_path, "override"),
@@ -158,9 +159,16 @@ def step_then_instance_has_slot_with_value(state: dict, slot: str, value: str) -
     assert entry[slot] == value, entry
 
 
-# Then: conformance and rejection
+@then(parsers.re(r"the LLM prompt states a limit of (?P<limit>\d+) instances"))
+def step_then_prompt_states_instance_limit(state: dict, limit: str) -> None:
+    prompt = state["llm"].prompts[0]
+    assert f"At most {limit} instances" in prompt
 
-@then("they pass LinkML schema-conformance validation without errors")
+
+@then("the LLM prompt states that a slot value is a single string and never a list")
+def step_then_prompt_requires_single_string_slot(state: dict) -> None:
+    prompt = state["llm"].prompts[0]
+    assert "single string" in prompt and "never a list" in prompt
 def step_then_pass_linkml_schema_conformance(state: dict) -> None:
     assert state["violations"] == [], state["violations"]
 
