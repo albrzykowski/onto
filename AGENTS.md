@@ -10,10 +10,20 @@ For **each** feature file in `features/`, in alphabetical order or per the depen
 2. **Run the tests** — all scenarios in that feature fail because the steps are not implemented.
 3. **Implement the steps** — add step definitions in `features/steps/*.py` (pytest-bdd). Run the tests — they still fail because the production code is missing.
 4. **Implement the solution** — the minimal code in the `onto` package that satisfies the scenarios. Run the tests — **they must pass**.
-5. **Refactor** — improve naming, remove duplication, extract modules. **Run the tests again — they must pass.** Never refactor in a way that breaks or skips tests.
+5. **Refactor** — improve naming, remove duplication, extract modules, through the `refactoring` skill (see below). **Run the tests again — they must pass.** Never refactor in a way that breaks or skips tests.
 
 Forbidden: implementing a feature without running tests, writing speculative production code, editing `.feature` files to make tests easier.
 NEVER Edit `.feature` files!
+
+## ♻️ Refactoring
+
+Refactoring is a **step of its own**, and it always goes through the **`refactoring` skill** — load it before touching the code (`skill: refactoring`). The skill defines what a refactor may change and how the suite stays green; do not improvise a different procedure.
+
+1. **Load the `refactoring` skill** and follow it.
+2. **Change the structure, not the behaviour.** What the features describe must stay exactly as it is: the public API, the files written, the YAML they contain, the events recorded in the provenance log, the CLI commands. Internal names, module layout and duplication are fair game.
+3. **Run all three checks** — `pytest`, `ruff check .`, `mypy onto features tests conftest.py`. A refactor that leaves the suite red is not finished; finish it or revert it.
+4. **Update `README.md` when the refactor changed something a reader can observe** — a renamed or moved function, a changed call signature, a new or removed command, a changed file layout, a new or removed dependency. Then re-run the documented flow, so the quick start still works. If the behaviour is identical, leave the README alone; do not restate the same thing in other words.
+5. **Commit** with `refactor: <what was restructured>`.
 
 ## 📦 Feature dependencies (implementation order)
 
@@ -154,4 +164,5 @@ Tests **never** call a real LLM API. Replace the model with a test double (`unit
 2. The whole existing suite passes (`pytest`).
 3. `ruff check .` and `mypy onto features tests conftest.py` are clean.
 4. Code is typed, duplicate-free, and follows the conventions above.
-5. No new dependencies outside the list allowed in README.
+5. No new dependencies outside the licences allowed above.
+6. `README.md` tells the truth about what the feature does and how to use it.

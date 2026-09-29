@@ -79,51 +79,47 @@ corpus/
 └── manual.pdf
 ```
 
-#### 5. Load the configuration, the documents and the chunks
+#### 5. Build the ontology
 
 ```python
 from pathlib import Path
 
-from onto.chunking import chunk_document
+from onto.builder import build
 from onto.config import load_config
-from onto.ingestion import load_documents
+from onto.llm_mistral import MistralLLM
 
 config = load_config("config.yaml")
-
-chunks = []
-for document in load_documents(Path("corpus")):
-    chunks.extend(chunk_document(document, config))
-```
-
-#### 6. Extract the concepts and generate the T-Box
-
-```python
-from onto.extraction import extract
-from onto.llm_mistral import MistralLLM
-from onto.schema_gen import generate_tbox
-
 llm = MistralLLM()
-candidates = extract(chunks, config, llm)
-schema_path = generate_tbox(candidates, config, llm, Path("ontology"))
+
+build(input_dir=Path("corpus"), output_dir=Path("ontology"), config=config, llm=llm)
 ```
 
-`extract` asks the model which classes and relations the text states;
-`generate_tbox` consolidates them by name and writes a LinkML schema.
-
-#### 7. Generate the A-Box
+`build` runs the whole pipeline — ingestion, chunking, extraction, T-Box, A-Box —
+and discards whatever the output directory held before, so `config.mode` must be
+`override`. The steps are also available one by one, if you want to inspect or
+change a stage:
 
 ```python
+from onto.chunking import chunk_document
+from onto.extraction import extract
+from onto.ingestion import load_documents
 from onto.instance_gen import generate_abox
 from onto.provenance import ProvenanceLog
+from onto.schema_gen import generate_tbox
 
+documents = load_documents(Path("corpus"))
+chunks = [chunk for document in documents for chunk in chunk_document(document, config)]
+candidates = extract(chunks, config, llm)
+schema_path = generate_tbox(candidates, config, llm, Path("ontology"))
 log = ProvenanceLog(Path("ontology/provenance.jsonl"), mode=config.mode)
-instances_path = generate_abox(chunks, config, llm, schema_path, log)
+generate_abox(chunks, config, llm, schema_path, log)
 ```
 
-The schema is the only vocabulary: an instance of a class the T-Box does not
-define is never written — it is rejected and logged as `instance.rejected`.
+The schema is the only vocabulary for the instances: an instance of a class the
+T-Box does not define is never written — it is rejected and logged as
+`instance.rejected`.
 
-#### 8. Inspect the output
+#### 6. Inspect the output
 
 `ontology/schema.yaml` — the T-Box:
 
@@ -155,3 +151,6 @@ instances:
 
 `ontology/provenance.jsonl` — one event per line, recording what each build
 changed and where it came from.
+
+`ontology/state.json` — the fingerprint of every document this build read, so a
+later run can tell which of them it has already seen.
