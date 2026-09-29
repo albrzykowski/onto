@@ -122,24 +122,14 @@ def _entry(instance: Instance) -> dict[str, Any]:
     }
 
 
-def generate_abox(
+def _instances_of(
     chunks: list[Chunk],
     config: BuilderConfig,
     llm: LLM,
-    schema_path: Path,
+    classes: dict[str, list[str]],
     log: ProvenanceLog,
-) -> Path:
-    """Write the instances the corpus states as an A-Box next to the T-Box at
-    `instances.yaml`, and return the path written.
-
-    The T-Box is the only vocabulary: an instance of a class the schema does not define is
-    rejected and logged rather than written, and a slot the class does not have is dropped.
-    Every written instance carries the chunk and the excerpt it was read from. Each chunk
-    is one request; a failure is logged and the chunk skipped, so one bad chunk never
-    aborts the build — the catch is deliberately wider, because an adapter that lets a
-    provider's own exception escape would otherwise take the whole build down.
-    """
-    classes = _classes_of(schema_path)
+) -> dict[str, Instance]:
+    """What the chunks state, as instances of the classes the T-Box defines."""
     instances: dict[str, Instance] = {}
     for chunk in chunks:
         try:
@@ -160,14 +150,65 @@ def generate_abox(
             instance = _instance(proposal, classes[proposal.class_name], chunk)
             # a later chunk stating the same entity replaces the earlier one
             instances[instance.id] = instance
-    path = schema_path.parent / INSTANCES_FILE_NAME
+    return instances
+
+
+def _entries_of(instances: dict[str, Instance]) -> dict[str, Any]:
+    return {key: _entry(value) for key, value in instances.items()}
+
+
+def _write(entries: dict[str, Any], path: Path) -> Path:
     path.write_text(
-        yaml.safe_dump(
-            {"instances": {key: _entry(value) for key, value in instances.items()}},
-            sort_keys=False,
-            allow_unicode=True,
-        ),
+        yaml.safe_dump({"instances": entries}, sort_keys=False, allow_unicode=True),
         encoding="utf-8",
     )
-    logger.info("wrote %s with %s instances", path, len(instances))
+    logger.info("wrote %s with %s instances", path, len(entries))
     return path
+
+
+def _read(path: Path) -> dict[str, Any]:
+    document = yaml.safe_load(path.read_text(encoding="utf-8")) if path.exists() else None
+    return document.get("instances", {}) if document else {}
+
+
+def generate_abox(
+    chunks: list[Chunk],
+    config: BuilderConfig,
+    llm: LLM,
+    schema_path: Path,
+    log: ProvenanceLog,
+) -> Path:
+    """Write the instances the corpus states as an A-Box next to the T-Box at
+    `instances.yaml`, and return the path written.
+
+    The T-Box is the only vocabulary: an instance of a class the schema does not define is
+    rejected and logged rather than written, and a slot the class does not have is dropped.
+    Every written instance carries the chunk and the excerpt it was read from. Each chunk
+    is one request; a failure is logged and the chunk skipped, so one bad chunk never
+    aborts the build — the catch is deliberately wider, because an adapter that lets a
+    provider's own exception escape would otherwise take the whole build down.
+    """
+    instances = _instances_of(chunks, config, llm, _classes_of(schema_path), log)
+    path = schema_path.parent / INSTANCES_FILE_NAME
+    return _write(_entries_of(instances), path)
+
+
+def extend_instances(
+    chunks: list[Chunk],
+    config: BuilderConfig,
+    llm: LLM,
+    schema_path: Path,
+    log: ProvenanceLog,
+) -> Path:
+    """Add to `instances.yaml` the instances the new chunks state, and leave every entry
+    already written exactly as it is.
+
+    An update adds what the corpus has newly stated; it does not restate what an earlier
+    build already established, so an instance accepted once is not overwritten by a later
+    document that names the same entity with less of it.
+    """
+    path = schema_path.parent / INSTANCES_FILE_NAME
+    entries = _read(path)
+    instances = _instances_of(chunks, config, llm, _classes_of(schema_path), log)
+    entries.update(_entries_of(instances))
+    return _write(entries, path)

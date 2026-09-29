@@ -54,6 +54,8 @@ chunking_strategy: fixed
 max_chunk_tokens: 2000
 overlap_tokens: 200
 batch_size: 4
+mode: override
+similarity_threshold: 0.85
 api_key: "your_mistral_api_key"
 ```
 
@@ -95,9 +97,8 @@ build(input_dir=Path("corpus"), output_dir=Path("ontology"), config=config, llm=
 ```
 
 `build` runs the whole pipeline — ingestion, chunking, extraction, T-Box, A-Box —
-and discards whatever the output directory held before, so `config.mode` must be
-`override`. The steps are also available one by one, if you want to inspect or
-change a stage:
+in the mode `config.mode` names. The steps are also available one by one, if you want
+to inspect or change a stage:
 
 ```python
 from onto.chunking import chunk_document
@@ -119,7 +120,42 @@ The schema is the only vocabulary for the instances: an instance of a class the
 T-Box does not define is never written — it is rejected and logged as
 `instance.rejected`.
 
-#### 6. Inspect the output
+With `mode: override` (the default) that is all `build` does: it discards whatever the
+output directory held before.
+
+#### 6. Extend the ontology with new documents
+
+`mode: update` reads only the documents whose fingerprint `ontology/state.json` does
+not record yet, and extends what is already there. The classes, slots and instances of
+an earlier build are kept, a concept that turns out to be another name for a class the
+schema already has is merged into it, and a slot the new documents describe with a second
+type is put to the model to resolve. The provenance log of the earlier build is appended
+to, not replaced, and a run that finds nothing new writes nothing at all.
+
+Telling a repeated concept from a new one is done with embeddings, so update mode needs
+an object with an `embed` method — the `Embedder` protocol in `onto.dedup`. No embedding
+provider ships with the library yet, so bring your own:
+
+```python
+from onto.builder import build
+from onto.llm_mistral import MistralLLM
+
+class MyEmbedder:
+    """Turn concept names into vectors; their cosine similarity is what is compared."""
+
+    def embed(self, texts: list[str]) -> list[list[float]]:
+        ...
+
+build(
+    input_dir=Path("corpus"),
+    output_dir=Path("ontology"),
+    config=config,
+    llm=MistralLLM(),
+    embedder=MyEmbedder(),
+)
+```
+
+#### 7. Inspect the output
 
 `ontology/schema.yaml` — the T-Box:
 
@@ -152,5 +188,5 @@ instances:
 `ontology/provenance.jsonl` — one event per line, recording what each build
 changed and where it came from.
 
-`ontology/state.json` — the fingerprint of every document this build read, so a
-later run can tell which of them it has already seen.
+`ontology/state.json` — the fingerprint of every document a build has read, so a later
+run can tell which of them it has already seen.
