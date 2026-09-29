@@ -9,7 +9,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 @pytest.fixture
 def state() -> dict:
     """Mutable per-test state shared between step definitions."""
-    return {"config": None, "error": None}
+    return {"config": None, "error": None, "records": []}
 
 
 @pytest.fixture(autouse=True)
@@ -43,3 +43,9 @@ def workdir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     """Isolated working directory, so steps can use relative paths."""
     monkeypatch.chdir(tmp_path)
     return tmp_path
+
+
+@pytest.fixture
+def provenance_path(workdir: Path) -> Path:
+    """Location of the JSONL provenance log a build writes."""
+    return workdir / "ontology" / "provenance.jsonl"

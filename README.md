@@ -4,10 +4,11 @@
 
 > [!WARNING]
 > **Early stage — this README is mostly a design document.** Only configuration
-> loading, document ingestion and chunking are implemented and covered by
-> acceptance tests. Everything else (CLI, LLM extraction, T-Box/A-Box generation,
-> provenance, deduplication, both build modes) is **planned**; the sections
-> describing it are marked 🚧. See [Implementation status](#-implementation-status).
+> loading, document ingestion, chunking and the provenance log are implemented
+> and covered by acceptance tests. Everything else (CLI, LLM extraction,
+> T-Box/A-Box generation, deduplication, both build modes) is **planned**; the
+> sections describing it are marked 🚧. See
+> [Implementation status](#-implementation-status).
 
 ## 📍 Implementation status
 
@@ -19,7 +20,7 @@
 | LLM extraction       | 🚧 planned       | `features/llm-extraction.feature`     |
 | T-Box generation     | 🚧 planned       | `features/tbox-generation.feature`    |
 | A-Box generation     | 🚧 planned       | `features/abox-generation.feature`    |
-| Provenance log       | 🚧 planned       | `features/provenance-logging.feature` |
+| Provenance log       | ✅ implemented   | `features/provenance-logging.feature` |
 | Override mode        | 🚧 planned       | `features/override-mode.feature`      |
 | Update mode          | 🚧 planned       | `features/update-mode.feature`        |
 | CLI                  | 🚧 planned       | `features/cli.feature`                |
@@ -37,6 +38,7 @@ tests today; the 🚧 rows have written criteria but no implementation.
 - Configurable ontology scope via YAML: domains (with descriptions), allowed classes and relations
 - Document fingerprints — SHA-256 of the extracted text, stable across re-saves of the same file
 - Fixed-size chunking with configurable overlap, and stable `<path>#c<N>` chunk identifiers
+- Append-only JSONL provenance log: every ontology change is linked to the source document, chunk, **and the exact text excerpt it was derived from**
 
 ### 🚧 Planned
 
@@ -45,7 +47,6 @@ tests today; the 🚧 rows have written criteria but no implementation.
 - Two operating modes:
   - **Override** — the ontology is rebuilt from scratch
   - **Update** — the existing ontology is extended with new data (deduplication: embeddings + LLM verification)
-- Full provenance log: every ontology change is linked to the source document, chunk, **and the exact text excerpt it was derived from**
 - Large corpus support (1000+ documents): LLM batching, skipping unchanged files
 - Class and relation names in English (ontology standard); source texts may be in any language
 
@@ -360,7 +361,9 @@ chunks: an unsupported `chunking_strategy` (only `fixed` is implemented),
 
 ## 📁 Output structure
 
-🚧 **Planned** — no build pipeline exists yet, so nothing writes this directory.
+🚧 **Partly implemented** — no build pipeline exists yet, so nothing writes
+`schema.yaml`, `instances.yaml` or `state.json`. `provenance.jsonl` is written
+by `ProvenanceLog`, but only by callers that record events explicitly.
 
 ```
 ontology/
@@ -372,26 +375,65 @@ ontology/
 
 ## 🗒️ Provenance log
 
-🚧 **Planned** — `onto/provenance.py` does not exist yet. The event format below
-is the one specified by `features/provenance-logging.feature` and is not produced
-by any current code.
+✅ Implemented — `onto/provenance.py`
 
-Every event (creation/update/merge of a class, relation, or instance) is recorded as one JSONL entry. Each entry includes the **source text excerpt** the change was derived from:
+`ProvenanceLog` is an **append-only** JSONL event log: one ontology change per
+line. The build mode is fixed for the log's lifetime, and the timestamp is
+stamped when the event is written, so a caller supplies only the change itself.
+
+```python
+from pathlib import Path
+
+from onto.config import load_config
+from onto.provenance import ProvenanceLog, SourceRef
+
+config = load_config("config.yaml")
+log = ProvenanceLog(Path("./ontology/provenance.jsonl"), config.mode)
+
+log.record(
+    event="class.created",
+    id="Vehicle",
+    source_excerpt="VW has been producing the Golf, a compact passenger car, since 1974.",
+    source_documents=[SourceRef(path=Path("corpus/article1.txt"), chunk_id="corpus/article1.txt#c3")],
+)
+```
+
+The parent directory is created on the first `record`, and the file is only ever
+appended to — a later run that records into the same log keeps the earlier
+events.
+
+### Event format
+
+Every entry carries `event`, `id`, `source_documents`, `source_excerpt`,
+`timestamp` and `mode`. `reason` and `merged_ids` appear only when they apply.
 
 ```json
 {
   "event": "class.created",
   "id": "Vehicle",
-  "source_documents": [{"path": "corpus/article1.txt", "chunk_id": "article1.txt#c12"}],
+  "source_documents": [{"path": "corpus/article1.txt", "chunk_id": "corpus/article1.txt#c12"}],
   "source_excerpt": "VW has been producing the Golf, a compact passenger car, since 1974.",
   "timestamp": "2026-09-27T10:00:00Z",
   "mode": "update"
 }
 ```
 
+| Event                | Extra field             | Meaning                                        |
+| -------------------- | ----------------------- | ---------------------------------------------- |
+| `class.created`      | —                       | a new class was derived from the excerpt        |
+| `class.updated`      | —                       | an existing class gained a new source          |
+| `class.merged`       | `merged_ids`            | concepts folded into the surviving `id`         |
+| `class.rejected`     | `reason`                | e.g. `not_in_allowed_classes`                   |
+| `document.skipped`   | `reason`                | e.g. `unchanged_fingerprint`; `id` is the path  |
+
+🚧 The log records events, but **nothing produces them yet** — `class.*` and
+`document.skipped` events are emitted by the T-Box, A-Box and update-mode
+builders, which are still planned. The vocabulary above is fixed by
+`features/provenance-logging.feature`.
+
 ## 🧪 Tests
 
-The project is built using the **ATDD** cycle — see `AGENTS.md` and the `features/` directory. 3 of the 10 features currently have acceptance tests (configuration loading, document ingestion, chunking).
+The project is built using the **ATDD** cycle — see `AGENTS.md` and the `features/` directory. 4 of the 10 features currently have acceptance tests (configuration loading, document ingestion, chunking, provenance logging).
 
 **Use the virtual environment `.venv` to run tests:**
 
