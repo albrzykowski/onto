@@ -197,3 +197,33 @@ Also worth pinning while that file is open: the OpenAI adapter and the Mistral a
 differ in whether the SDK reads the key from the environment (`OPENAI_API_KEY` is read,
 `MISTRAL_API_KEY` is silently ignored in `mistralai` 1.12.4). Neither provider may be
 relied on to pick the key up on its own.
+
+### Keep the provider extras genuinely optional
+
+`pyproject.toml` ships `mistral` and `openai` as separate extras and the README promises that
+installing the one you use is enough. `onto/embeddings.py` breaks that promise: it imports
+`mistralai` **and** `openai` at module level, so `onto update` needs both SDKs whichever
+provider the configuration names. `onto/cli.py` hides the failure until `embedder_for` runs,
+which is why a Mistral-only `onto build` works and a Mistral-only `onto update` does not —
+and the documented quick start breaks at its own step 6.
+
+The asymmetry is visible one file away: the LLM contract is already split per provider
+(`onto/llm_mistral.py` imports only `mistralai`, `onto/llm_openai.py` only `openai`). The
+embeddings contract is the only one that names both SDKs at once.
+
+Proposed, not yet implemented:
+
+- Split it the same way: `onto/embeddings_mistral.py` and `onto/embeddings_openai.py`, leaving
+  `onto/embeddings.py` for the provider-neutral `Embedder` protocol. Each adapter module
+  imports only its own SDK, so the unused provider is never imported at all.
+- `onto/cli.py` keeps the lazy `embedder_for` it has today; the point is that the import
+  chain stops naming the other provider, not that the import moves.
+- `tests/test_embedding_adapters.py` builds a fake client for both SDKs, so the suite itself
+  needs both extras (or the dev group). Split the test file to match; do not make it skip the
+  provider that is not installed, or it stops testing anything.
+
+Note that no scenario can catch this: the suite runs inside one virtual environment that has
+both SDKs, so a broken extra can never fail a test. The verification is manual and belongs
+in the commit message. Done when a clean `pip install -e .[mistral]` environment runs both
+`onto build` and `onto update` against a Mistral configuration, the same with `.[openai]`, and
+the README line about installing one provider is true as written.
