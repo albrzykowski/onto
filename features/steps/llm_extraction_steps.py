@@ -1,18 +1,17 @@
 import json
 import logging
 import re
-from collections.abc import Callable
 from pathlib import Path
 
 import pytest
 from pytest_bdd import given, parsers, then, when
 
-from features.steps.support import quoted
+from features.steps.support import FakeLLM, quoted, split_names
 from onto.chunking import Chunk, chunk_document
 from onto.config import BuilderConfig
 from onto.extraction import extract
 from onto.ingestion import Document, compute_fingerprint
-from onto.llm import CompletionRequest, LLMError
+from onto.llm import LLMError
 
 DEFAULT_CHUNK_TEXT = "The 1.6 TDI engine is installed in the Golf produced by VW"
 POLISH_CHUNK_TEXT = "Silnik TDI 1.6 jest montowany w Golfie produkowanym przez VW."
@@ -37,23 +36,6 @@ PREDEFINED_MARKERS = ("Predefined classes:", "Predefined relations:")
 
 PASCAL_CASE = re.compile(r"[A-Z][A-Za-z0-9]*")
 SNAKE_CASE = re.compile(r"[a-z][a-z0-9]*(_[a-z0-9]+)*")
-
-
-class FakeLLM:
-    """Stands in for a language model; the features speak of the LLM, not of a provider."""
-
-    def __init__(self, respond: Callable[[int], str]) -> None:
-        self._respond = respond
-        self.prompts: list[str] = []
-
-    def complete(self, request: CompletionRequest) -> str:
-        self.prompts.append(request.prompt)
-        return self._respond(len(self.prompts) - 1)
-
-
-def split_names(raw: str) -> list[str]:
-    """A Gherkin list of names is written with commas and conjunctions: `A, B and C`."""
-    return [name.strip() for name in re.split(r",|\band\b", raw) if name.strip()]
 
 
 def make_chunk(number: int, text: str) -> Chunk:

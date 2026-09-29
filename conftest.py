@@ -9,7 +9,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 @pytest.fixture
 def state() -> dict:
     """Mutable per-test state shared between step definitions."""
-    return {"chunks": [], "config": None, "error": None, "records": []}
+    return {"candidates": [], "chunks": [], "config": None, "error": None, "records": []}
 
 
 @pytest.fixture(autouse=True)
@@ -46,6 +46,18 @@ def workdir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
 
 
 @pytest.fixture
-def provenance_path(workdir: Path) -> Path:
+def output_dir(workdir: Path) -> Path:
+    """Directory a build writes the ontology to."""
+    return workdir / "ontology"
+
+
+@pytest.fixture
+def provenance_path(output_dir: Path) -> Path:
     """Location of the JSONL provenance log a build writes."""
-    return workdir / "ontology" / "provenance.jsonl"
+    return output_dir / "provenance.jsonl"
+
+
+@pytest.fixture
+def schema_path(output_dir: Path) -> Path:
+    """Location of the LinkML T-Box a build writes."""
+    return output_dir / "schema.yaml"

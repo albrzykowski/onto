@@ -3,11 +3,11 @@
 > A Python library that automatically builds an ontology (T-Box + A-Box) from unstructured text documents using any LLM (Anthropic Claude, OpenAI, …). The ontology is described in **LinkML**.
 
 > [!WARNING]
-> **Early stage — this README is mostly a design document.** Only configuration
-> loading, document ingestion, chunking and the provenance log are implemented
-> and covered by acceptance tests. Everything else (CLI, LLM extraction,
-> T-Box/A-Box generation, deduplication, both build modes) is **planned**; the
-> sections describing it are marked 🚧. See
+> **Early stage — this README is mostly a design document.** Configuration
+> loading, document ingestion, chunking, LLM extraction, T-Box generation and
+> the provenance log are implemented and covered by acceptance tests.
+> Everything else (CLI, A-Box generation, deduplication, both build modes) is
+> **planned**; the sections describing it are marked 🚧. See
 > [Implementation status](#-implementation-status).
 
 ## 📍 Implementation status
@@ -17,8 +17,8 @@
 | Configuration        | ✅ implemented   | `features/config-loading.feature`     |
 | Document ingestion   | ✅ implemented   | `features/document-ingestion.feature` |
 | Chunking             | ✅ implemented   | `features/chunking.feature`           |
-| LLM extraction       | 🚧 planned       | `features/llm-extraction.feature`     |
-| T-Box generation     | 🚧 planned       | `features/tbox-generation.feature`    |
+| LLM extraction       | ✅ implemented   | `features/llm-extraction.feature`     |
+| T-Box generation     | ✅ implemented   | `features/tbox-generation.feature`    |
 | A-Box generation     | 🚧 planned       | `features/abox-generation.feature`    |
 | Provenance log       | ✅ implemented   | `features/provenance-logging.feature` |
 | Override mode        | 🚧 planned       | `features/override-mode.feature`      |
@@ -39,16 +39,16 @@ tests today; the 🚧 rows have written criteria but no implementation.
 - Document fingerprints — SHA-256 of the extracted text, stable across re-saves of the same file
 - Fixed-size chunking with configurable overlap, and stable `<path>#c<N>` chunk identifiers
 - Append-only JSONL provenance log: every ontology change is linked to the source document, chunk, **and the exact text excerpt it was derived from**
+- **T-Box** generated as a LinkML schema (`schema.yaml`): classes and slots with LLM-written descriptions, consolidated over the whole corpus, each citing its source chunks
+- Class and relation names in English (ontology standard); source texts may be in any language
 
 ### 🚧 Planned
 
-- Automatic extraction of classes, relations, and instances via LLM
-- **T-Box** (schema) and **A-Box** (instances) generated in LinkML format (YAML/JSON)
+- **A-Box** (instances) generation and deduplication via LLM
 - Two operating modes:
   - **Override** — the ontology is rebuilt from scratch
   - **Update** — the existing ontology is extended with new data (deduplication: embeddings + LLM verification)
-- Large corpus support (1000+ documents): LLM batching, skipping unchanged files
-- Class and relation names in English (ontology standard); source texts may be in any language
+- Large corpus support (1000+ documents): skipping unchanged files
 
 ## 🔧 Stack (OpenSource only — Apache-2.0 / MIT / MPL-2.0 only, **no BSD**)
 
@@ -62,7 +62,7 @@ tests today; the 🚧 rows have written criteria but no implementation.
 | `pytest`, `pytest-bdd`                   | MIT              | ✅ test suite |
 | `mypy`, `ruff`                           | MIT              | ✅ lint & type checks |
 | `anthropic`, `openai`, `mistralai` (adapters) | MIT / Apache-2.0 | ✅ optional, imported by the adapter only |
-| `linkml`, `linkml-runtime`               | Apache-2.0 / CC0 | 🚧 planned |
+| `linkml`, `linkml-runtime`               | Apache-2.0 / CC0 | ✅ T-Box validation in tests |
 | `sentence-transformers` (or `fastembed`) | Apache-2.0       | 🚧 planned |
 | `typer`                                  | MIT              | 🚧 planned |
 
@@ -480,18 +480,93 @@ is set. Candidates are **not** filtered against the allow-lists here: the lists
 constrain the prompt, and rejecting what slips through is the deduplication step's
 job.
 
+## 🧱 T-Box generation
+
+✅ Implemented — `onto/schema_gen.py`
+
+`generate_tbox` turns the extracted `Candidate` list into a LinkML schema at
+`<output_dir>/schema.yaml` and returns the path it wrote.
+
+```python
+from pathlib import Path
+
+from onto.config import load_config
+from onto.llm_openai import OpenAILLM
+from onto.schema_gen import generate_tbox
+
+config = load_config("config.yaml")
+llm = OpenAILLM(api_key="sk-...")
+schema_path = generate_tbox(candidates, config, llm, Path("./ontology"))
+```
+
+The candidates go to the model as **one** request — a description per class plus
+the slots that belong to it — so a concept named in ten chunks is described once.
+Whatever the model leaves out of its plan is not part of the schema, and a slot it
+assigns that was never extracted is dropped rather than invented.
+
+### Consolidation and provenance
+
+Candidates are merged **by name, in the order they were extracted**: a `Vehicle`
+found in three chunks becomes a single class whose `source_documents` annotation
+lists all three chunk ids. Classes and slots each carry the annotation, and
+LinkML annotations are scalar-valued, so the list is wrapped in one tagged
+`value`.
+
+```yaml
+id: https://example.org/ontology-schema
+name: ontology-schema
+prefixes:
+  ontology: https://example.org/ontology/
+default_prefix: ontology
+default_range: string
+imports:
+- linkml:types
+classes:
+  Vehicle:
+    name: Vehicle
+    description: A compact passenger car produced since 1974.
+    slots:
+    - has_engine
+    annotations:
+      source_documents:
+        tag: source_documents
+        value:
+        - corpus/article1.txt#c3
+        - corpus/article2.txt#c1
+slots:
+  has_engine:
+    name: has_engine
+    annotations:
+      source_documents:
+        tag: source_documents
+        value:
+        - corpus/article1.txt#c3
+```
+
+The schema is named after the output directory (`ontology/` → `ontology-schema`),
+and its classes and slots are keyed by name — the form LinkML's own loader
+normalises to, and the reason no entry carries an `id` of its own.
+
+### Validation
+
+`features/tbox-generation.feature` requires the written schema to be a *valid*
+one, so the acceptance tests run it through LinkML's own linter
+(`Linter().lint(path, validate_schema=True)`) and fail on any problem reported at
+`error` level. `linkml` and `linkml-runtime` are dev-only dependencies: nothing
+in `onto` imports them at runtime, the schema is written as plain YAML.
+
 ## 📁 Output structure
 
 🚧 **Partly implemented** — no build pipeline exists yet, so nothing writes
-`schema.yaml`, `instances.yaml` or `state.json`. `provenance.jsonl` is written
-by `ProvenanceLog`, but only by callers that record events explicitly.
+`instances.yaml` or `state.json`; `schema.yaml` is written by
+`generate_tbox`, and `provenance.jsonl` by `ProvenanceLog`.
 
 ```
 ontology/
-├── schema.yaml          # T-Box — LinkML schema
-├── instances.yaml       # A-Box — LinkML instances
+├── schema.yaml          # T-Box — LinkML schema (written by `generate_tbox`)
+├── instances.yaml       # A-Box — LinkML instances (planned)
 ├── provenance.jsonl     # build log (1 line = 1 event)
-└── state.json           # document fingerprints (for update mode)
+└── state.json           # document fingerprints (for update mode, planned)
 ```
 
 ## 🗒️ Provenance log
@@ -554,7 +629,7 @@ builders, which are still planned. The vocabulary above is fixed by
 
 ## 🧪 Tests
 
-The project is built using the **ATDD** cycle — see `AGENTS.md` and the `features/` directory. 5 of the 10 features currently have acceptance tests (configuration loading, document ingestion, chunking, LLM extraction, provenance logging). The provider adapters in `onto/llm_openai.py` and `onto/llm_mistral.py` have no Gherkin contract — they only translate a `CompletionRequest` — so they are covered by the unit tests in `tests/test_llm_adapters.py`, which use a fake client and never call a real API.
+The project is built using the **ATDD** cycle — see `AGENTS.md` and the `features/` directory. 6 of the 10 features currently have acceptance tests (configuration loading, document ingestion, chunking, LLM extraction, T-Box generation, provenance logging). The provider adapters in `onto/llm_openai.py` and `onto/llm_mistral.py` have no Gherkin contract — they only translate a `CompletionRequest` — so they are covered by the unit tests in `tests/test_llm_adapters.py`, which use a fake client and never call a real API.
 
 **Use the virtual environment `.venv` to run tests:**
 
