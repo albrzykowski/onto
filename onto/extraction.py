@@ -1,12 +1,13 @@
 import logging
 import re
 from collections.abc import Callable, Iterator
-from typing import Any, Literal, Protocol
+from typing import Literal
 
 from pydantic import BaseModel, Field
 
 from onto.chunking import Chunk
 from onto.config import BuilderConfig
+from onto.llm import LLM, CompletionRequest
 from onto.provenance import SourceRef
 
 logger = logging.getLogger(__name__)
@@ -40,20 +41,6 @@ class Candidate(BaseModel):
     name: str
     source_documents: list[SourceRef] = Field(default_factory=list)
     source_excerpt: str = ""
-
-
-class _Reply(Protocol):
-    content: list[Any]
-
-
-class _Messages(Protocol):
-    def create(self, **request: Any) -> _Reply: ...
-
-
-class LLMClient(Protocol):
-    """The part of an Anthropic client that extraction uses: `client.messages.create`."""
-
-    messages: _Messages
 
 
 class _Proposal(BaseModel):
@@ -114,13 +101,12 @@ def _prompt(batch: list[Chunk], config: BuilderConfig) -> str:
     return "\n\n".join(section for section in sections if section)
 
 
-def _ask(client: LLMClient, batch: list[Chunk], config: BuilderConfig) -> str:
-    reply = client.messages.create(
-        model=config.model,
-        max_tokens=_MAX_TOKENS,
-        messages=[{"role": "user", "content": _prompt(batch, config)}],
+def _ask(llm: LLM, batch: list[Chunk], config: BuilderConfig) -> str:
+    return llm.complete(
+        CompletionRequest(
+            model=config.model, prompt=_prompt(batch, config), max_tokens=_MAX_TOKENS
+        )
     )
-    return reply.content[0].text
 
 
 def _candidates_of(
@@ -145,19 +131,20 @@ def _batches(chunks: list[Chunk], size: int) -> Iterator[list[Chunk]]:
         yield chunks[start : start + size]
 
 
-def extract(chunks: list[Chunk], config: BuilderConfig, client: LLMClient) -> list[Candidate]:
+def extract(chunks: list[Chunk], config: BuilderConfig, llm: LLM) -> list[Candidate]:
     """Ask the LLM which concepts each batch of chunks states.
 
-    Chunks are sent in batches of `config.batch_size`. A batch that fails — the API,
-    the network, or a reply that is not the expected JSON — is logged and skipped
-    instead of aborting the build. A candidate cites every chunk of the batch it was
-    read from, because the model saw all of them at once; its `source_excerpt` is what
-    pins down the exact text the candidate came from.
+    Chunks are sent in batches of `config.batch_size`. An `LLMError` from the model is
+    logged and the batch skipped, so one bad chunk never aborts the build — the catch is
+    deliberately wider, because an adapter that lets a provider's own exception escape
+    would otherwise take the whole build down. A candidate cites every chunk of the batch
+    it was read from, because the model saw all of them at once; its `source_excerpt` is
+    what pins down the exact text the candidate came from.
     """
     candidates: list[Candidate] = []
     for batch in _batches(chunks, config.batch_size):
         try:
-            answer = _Answer.model_validate_json(_ask(client, batch, config))
+            answer = _Answer.model_validate_json(_ask(llm, batch, config))
         except Exception as error:
             logger.error(
                 "extraction failed for %s: %s", [chunk.chunk_id for chunk in batch], error

@@ -34,7 +34,8 @@ onto/
 ├── config.py          # BuilderConfig (pydantic), YAML loading, validation
 ├── ingestion.py       # txt/md/pdf/docx loading, fingerprinting
 ├── chunking.py        # fixed/semantic chunking
-├── extraction.py      # LLM calls (anthropic), prompts, batching
+├── llm.py             # provider-neutral LLM contract (CompletionRequest, LLM, LLMError)
+├── extraction.py      # LLM calls, prompts, batching
 ├── schema_gen.py      # T-Box — LinkML schema generation
 ├── instance_gen.py    # A-Box — LinkML instance generation
 ├── dedup.py           # embeddings, similarity threshold, LLM verification

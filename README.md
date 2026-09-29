@@ -1,6 +1,6 @@
 # Auto Ontology Builder
 
-> A Python library that automatically builds an ontology (T-Box + A-Box) from unstructured text documents using an LLM (Anthropic Claude API). The ontology is described in **LinkML**.
+> A Python library that automatically builds an ontology (T-Box + A-Box) from unstructured text documents using any LLM (Anthropic Claude, OpenAI, …). The ontology is described in **LinkML**.
 
 > [!WARNING]
 > **Early stage — this README is mostly a design document.** Only configuration
@@ -61,7 +61,7 @@ tests today; the 🚧 rows have written criteria but no implementation.
 | `python-docx`                            | MIT              | ✅ DOCX ingestion |
 | `pytest`, `pytest-bdd`                   | MIT              | ✅ test suite |
 | `mypy`, `ruff`                           | MIT              | ✅ lint & type checks |
-| `anthropic`                              | MIT              | 🚧 planned |
+| `anthropic`, `openai`, … (adapters)    | MIT              | ✅ optional, you write the adapter |
 | `linkml`, `linkml-runtime`               | Apache-2.0 / CC0 | 🚧 planned |
 | `sentence-transformers` (or `fastembed`) | Apache-2.0       | 🚧 planned |
 | `typer`                                  | MIT              | 🚧 planned |
@@ -368,16 +368,60 @@ chunks: an unsupported `chunking_strategy` (only `fixed` is implemented),
 
 ## 🧠 LLM extraction
 
-✅ Implemented — `onto/extraction.py`
+✅ Implemented — `onto/llm.py`, `onto/extraction.py`
 
-`extract` sends chunks to the LLM and returns the candidate classes and relations
-it proposes. It takes the chunks, a `BuilderConfig` and **a client you construct
-yourself** — `onto` sends the requests but does not depend on the Anthropic SDK:
+`onto` talks to **no particular provider**. It declares what a build needs from a
+model — a `CompletionRequest` in, a string out — and leaves the translation into
+Anthropic's, OpenAI's or anyone's vocabulary to an adapter you write:
+
+```python
+from onto.llm import CompletionRequest, LLMError
+
+
+class AnthropicLLM:
+    def __init__(self, api_key: str | None = None) -> None:
+        self._client = anthropic.Anthropic(api_key=api_key)
+
+    def complete(self, request: CompletionRequest) -> str:
+        try:
+            reply = self._client.messages.create(
+                model=request.model,
+                max_tokens=request.max_tokens,
+                messages=[{"role": "user", "content": request.prompt}],
+            )
+        except anthropic.APIError as error:
+            raise LLMError(str(error)) from error
+        return reply.content[0].text
+```
+
+```python
+class OpenAILLM:
+    def __init__(self, api_key: str | None = None) -> None:
+        self._client = openai.OpenAI(api_key=api_key)
+
+    def complete(self, request: CompletionRequest) -> str:
+        try:
+            reply = self._client.chat.completions.create(
+                model=request.model,
+                max_tokens=request.max_tokens,
+                messages=[{"role": "user", "content": request.prompt}],
+            )
+        except openai.APIError as error:
+            raise LLMError(str(error)) from error
+        return reply.choices[0].message.content or ""
+```
+
+An adapter is the only place a provider is named: it renames the fields
+(`max_tokens` → `max_output_tokens` for Gemini), unwraps the reply, and turns
+provider exceptions into `LLMError` — the one error a caller may retry. Because
+the model id comes from `config.model`, switching providers is a config change
+plus a different adapter.
+
+`extract` then sends the chunks and returns the candidate classes and relations
+the model proposes:
 
 ```python
 from pathlib import Path
-
-import anthropic
 
 from onto.chunking import chunk_document
 from onto.config import load_config
@@ -387,12 +431,9 @@ from onto.ingestion import load_documents
 config = load_config("config.yaml")
 chunks = [chunk for document in load_documents(Path("./corpus")) for chunk in chunk_document(document, config)]
 
-for candidate in extract(chunks, config, anthropic.Anthropic()):
+for candidate in extract(chunks, config, AnthropicLLM()):
     print(candidate.kind, candidate.name, candidate.source_excerpt)
 ```
-
-The client only has to offer `client.messages.create(...)`; the model is taken from
-`config.model` and the reply is expected to be a single JSON object.
 
 ### The `Candidate` model
 
@@ -410,9 +451,9 @@ is written in**; the returned names are then normalised to the required casing, 
 ### Batching and failures
 
 `batch_size` chunks are sent in one request (default `1`, one request per chunk).
-A request that fails — the API, the network, or a reply that is not the expected
-JSON — is logged at `ERROR` naming the chunks and then skipped, so a single bad
-chunk never aborts the build.
+A request that fails — an `LLMError`, a provider exception from an adapter that
+did not translate, or a reply that is not the expected JSON — is logged at `ERROR`
+naming the chunks and then skipped, so a single bad chunk never aborts the build.
 
 Because the model read a whole batch at once, a candidate cites every chunk of its
 batch in `source_documents`; `source_excerpt` is what pins down the exact text.

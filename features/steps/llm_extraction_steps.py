@@ -3,8 +3,6 @@ import logging
 import re
 from collections.abc import Callable
 from pathlib import Path
-from types import SimpleNamespace
-from typing import Any
 
 import pytest
 from pytest_bdd import given, parsers, then, when
@@ -14,6 +12,7 @@ from onto.chunking import Chunk, chunk_document
 from onto.config import BuilderConfig
 from onto.extraction import extract
 from onto.ingestion import Document, compute_fingerprint
+from onto.llm import CompletionRequest, LLMError
 
 DEFAULT_CHUNK_TEXT = "The 1.6 TDI engine is installed in the Golf produced by VW"
 POLISH_CHUNK_TEXT = "Silnik TDI 1.6 jest montowany w Golfie produkowanym przez VW."
@@ -41,18 +40,15 @@ SNAKE_CASE = re.compile(r"[a-z][a-z0-9]*(_[a-z0-9]+)*")
 
 
 class FakeLLM:
-    """Stands in for an Anthropic client; the features speak of the LLM, not of the transport."""
+    """Stands in for a language model; the features speak of the LLM, not of a provider."""
 
     def __init__(self, respond: Callable[[int], str]) -> None:
         self._respond = respond
         self.prompts: list[str] = []
-        self.messages = SimpleNamespace(create=self._create)
 
-    def _create(self, **request: Any) -> SimpleNamespace:
-        prompt = request["messages"][0]["content"]
-        self.prompts.append(prompt)
-        reply = self._respond(len(self.prompts) - 1)
-        return SimpleNamespace(content=[SimpleNamespace(text=reply)])
+    def complete(self, request: CompletionRequest) -> str:
+        self.prompts.append(request.prompt)
+        return self._respond(len(self.prompts) - 1)
 
 
 def split_names(raw: str) -> list[str]:
@@ -93,7 +89,7 @@ def reply_for(classes: list[str], relations: list[str], excerpt: str) -> str:
 def client_for(state: dict) -> FakeLLM:
     def respond(call: int) -> str:
         if call == state.get("failing_call"):
-            raise RuntimeError("the model is overloaded")
+            raise LLMError("the model is overloaded")
         return state.get("reply", DEFAULT_REPLY)
 
     return FakeLLM(respond)
