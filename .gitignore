@@ -225,3 +225,4 @@ requirements-opencode.txt
 logs.txt
 config.yaml
 corpus/
+example.py

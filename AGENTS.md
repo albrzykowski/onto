@@ -169,3 +169,31 @@ Tests **never** call a real LLM API. Replace the model with a test double (`unit
 4. Code is typed, duplicate-free, and follows the conventions above.
 5. No new dependencies outside the licences allowed above.
 6. `README.md` tells the truth about what the feature does and how to use it.
+
+## 📌 TODO
+
+### Pin the api key wiring in a feature
+
+The programmatic path and the CLI can drift apart, and nothing noticed when they did.
+`157de4f` shipped a Python example that built `MistralLLM()` without a key while the CLI
+passed `api_key=config.api_key`; the request left without credentials and Mistral answered
+`Invalid API Key` — the same answer as a key that really is wrong, and as a key that had
+just been rotated. `a54c057` corrected the example, but nothing prevents the next drift.
+
+Proposed, not yet accepted as a scenario:
+
+- A scenario in `features/config-loading.feature` stating that a build from Python hands
+  `config.api_key` to the provider adapter, and an adapter that then sends
+  `Authorization: Bearer <config key>`.
+- The step reuses the fake client already used in `features/steps/support.py` and reads the
+  key off the adapter, so the assertion needs no network access.
+- Done when `pytest features/ -k config_loading` passes, the four `cli.feature` scenarios
+  still pass, and the README example is covered by the same wording the scenario pins.
+
+**The agent must not write this scenario.** The working cycle forbids editing `.feature`
+files; the author of the Gherkin adds it, then the agent runs the cycle as usual.
+
+Also worth pinning while that file is open: the OpenAI adapter and the Mistral adapter
+differ in whether the SDK reads the key from the environment (`OPENAI_API_KEY` is read,
+`MISTRAL_API_KEY` is silently ignored in `mistralai` 1.12.4). Neither provider may be
+relied on to pick the key up on its own.
