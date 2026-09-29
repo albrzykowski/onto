@@ -14,9 +14,6 @@ REQUIRED_FIELDS = {"event", "id", "source_documents", "source_excerpt", "timesta
 
 TIMESTAMP_PATTERN = re.compile(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z")
 
-UNCHANGED_REASON = "unchanged_fingerprint"
-NOT_ALLOWED_REASON = "not_in_allowed_classes"
-
 
 def source_ref_from_chunk(chunk: str) -> SourceRef:
     """A `<path>#c<N>` chunk id names its own path, so the path is read off it."""
@@ -124,7 +121,7 @@ def step_given_candidate_rejected(state: dict, id: str) -> None:
         {
             "event": "class.rejected",
             "id": id,
-            "reason": NOT_ALLOWED_REASON,
+            "reason": "not_in_allowed_classes",
         }
     )
 
@@ -133,17 +130,17 @@ def step_given_candidate_rejected(state: dict, id: str) -> None:
 def step_given_ontology_built_from_documents(
     state: dict, count: str, provenance_path: Path
 ) -> None:
-    log = ProvenanceLog(provenance_path, "override")
     for number in range(1, int(count) + 1):
         text = f"A combustion engine converts energy into motion, in document {number}."
-        log.record(
-            event="class.created",
-            id=f"Engine{number}",
-            source_excerpt=text,
-            source_documents=[document_built_from(text, f"corpus/article{number}.txt")],
+        state["records"].append(
+            {
+                "event": "class.created",
+                "id": f"Engine{number}",
+                "source_excerpt": text,
+                "source_documents": [document_built_from(text, f"corpus/article{number}.txt")],
+            }
         )
-    state["log_path"] = provenance_path
-    assert_build_mode(state, "override")
+    write_records(state, provenance_path, "override")
 
 
 @given("an unchanged document in update mode")
@@ -153,7 +150,7 @@ def step_given_unchanged_document(state: dict) -> None:
         {
             "event": "document.skipped",
             "id": state["document_path"],
-            "reason": UNCHANGED_REASON,
+            "reason": "unchanged_fingerprint",
         }
     )
 
@@ -223,9 +220,9 @@ def step_then_merged_event(state: dict, name: str, id: str, merged: str) -> None
 
 @then(parsers.re(rf'the log contains a {quoted("name")} event with the new source document'))
 def step_then_updated_event_with_new_source(state: dict, name: str) -> None:
-    entry = find_event(state, name)
-    assert entry["source_documents"][0]["chunk_id"] == state["updated_source"]
-    assert entry["source_documents"][0]["chunk_id"] != state["merged_source"]
+    chunk = find_event(state, name)["source_documents"][0]["chunk_id"]
+    assert chunk == state["updated_source"]
+    assert chunk != state["merged_source"]
 
 
 # Then: rejections and skipped documents
