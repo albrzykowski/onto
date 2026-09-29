@@ -61,7 +61,7 @@ tests today; the 🚧 rows have written criteria but no implementation.
 | `python-docx`                            | MIT              | ✅ DOCX ingestion |
 | `pytest`, `pytest-bdd`                   | MIT              | ✅ test suite |
 | `mypy`, `ruff`                           | MIT              | ✅ lint & type checks |
-| `anthropic`, `openai`, … (adapters)    | MIT              | ✅ optional, you write the adapter |
+| `anthropic`, `openai`, `mistralai` (adapters) | MIT / Apache-2.0 | ✅ optional, imported by the adapter only |
 | `linkml`, `linkml-runtime`               | Apache-2.0 / CC0 | 🚧 planned |
 | `sentence-transformers` (or `fastembed`) | Apache-2.0       | 🚧 planned |
 | `typer`                                  | MIT              | 🚧 planned |
@@ -368,11 +368,42 @@ chunks: an unsupported `chunking_strategy` (only `fixed` is implemented),
 
 ## 🧠 LLM extraction
 
-✅ Implemented — `onto/llm.py`, `onto/extraction.py`
+✅ Implemented — `onto/llm.py`, `onto/extraction.py`, `onto/llm_openai.py`, `onto/llm_mistral.py`
 
 `onto` talks to **no particular provider**. It declares what a build needs from a
-model — a `CompletionRequest` in, a string out — and leaves the translation into
-Anthropic's, OpenAI's or anyone's vocabulary to an adapter you write:
+model — a `CompletionRequest` in, a string out:
+
+| Contract      | Meaning                                                                     |
+| ------------- | --------------------------------------------------------------------------- |
+| `CompletionRequest` | `model`, `prompt`, `max_tokens` — phrased so any provider can be translated into it |
+| `LLM`         | a `Protocol`: one `complete(request) -> str`                                 |
+| `LLMError`    | the one failure a caller may retry                                           |
+
+Two adapters ship with the library; each is the only place its provider is named.
+They import their SDK at module level, so `onto` itself keeps **no runtime
+dependency on any provider** — install `openai` or `mistralai` only if you use
+that adapter.
+
+| Adapter               | SDK          | Method called                  | Provider errors caught |
+| --------------------- | ------------ | ------------------------------ | ---------------------- |
+| `OpenAILLM`           | `openai`     | `client.chat.completions.create` | `openai.OpenAIError`  |
+| `MistralLLM`          | `mistralai`  | `client.chat.complete`         | `mistralai.models.SDKError` |
+
+```python
+from onto.llm_openai import OpenAILLM
+from onto.llm_mistral import MistralLLM
+
+model = OpenAILLM(api_key="sk-...")      # or MistralLLM(api_key="...")
+```
+
+Both accept an already built client (`OpenAILLM(client=my_client)`), translate the
+request into the provider's vocabulary, unwrap the reply, and re-raise provider
+failures as `LLMError`. Leaving the `with` block closes the client. Switching
+providers is a different adapter plus a different `config.model` — for example
+`openai/gpt-4o` or `mistral/mistral-large-latest`.
+
+An adapter is ten lines of translation, so adding one for another provider is
+routine:
 
 ```python
 from onto.llm import CompletionRequest, LLMError
@@ -394,29 +425,6 @@ class AnthropicLLM:
         return reply.content[0].text
 ```
 
-```python
-class OpenAILLM:
-    def __init__(self, api_key: str | None = None) -> None:
-        self._client = openai.OpenAI(api_key=api_key)
-
-    def complete(self, request: CompletionRequest) -> str:
-        try:
-            reply = self._client.chat.completions.create(
-                model=request.model,
-                max_tokens=request.max_tokens,
-                messages=[{"role": "user", "content": request.prompt}],
-            )
-        except openai.APIError as error:
-            raise LLMError(str(error)) from error
-        return reply.choices[0].message.content or ""
-```
-
-An adapter is the only place a provider is named: it renames the fields
-(`max_tokens` → `max_output_tokens` for Gemini), unwraps the reply, and turns
-provider exceptions into `LLMError` — the one error a caller may retry. Because
-the model id comes from `config.model`, switching providers is a config change
-plus a different adapter.
-
 `extract` then sends the chunks and returns the candidate classes and relations
 the model proposes:
 
@@ -431,8 +439,9 @@ from onto.ingestion import load_documents
 config = load_config("config.yaml")
 chunks = [chunk for document in load_documents(Path("./corpus")) for chunk in chunk_document(document, config)]
 
-for candidate in extract(chunks, config, AnthropicLLM()):
-    print(candidate.kind, candidate.name, candidate.source_excerpt)
+with MistralLLM() as model:
+    for candidate in extract(chunks, config, model):
+        print(candidate.kind, candidate.name, candidate.source_excerpt)
 ```
 
 ### The `Candidate` model
@@ -545,13 +554,13 @@ builders, which are still planned. The vocabulary above is fixed by
 
 ## 🧪 Tests
 
-The project is built using the **ATDD** cycle — see `AGENTS.md` and the `features/` directory. 5 of the 10 features currently have acceptance tests (configuration loading, document ingestion, chunking, LLM extraction, provenance logging).
+The project is built using the **ATDD** cycle — see `AGENTS.md` and the `features/` directory. 5 of the 10 features currently have acceptance tests (configuration loading, document ingestion, chunking, LLM extraction, provenance logging). The provider adapters in `onto/llm_openai.py` and `onto/llm_mistral.py` have no Gherkin contract — they only translate a `CompletionRequest` — so they are covered by the unit tests in `tests/test_llm_adapters.py`, which use a fake client and never call a real API.
 
 **Use the virtual environment `.venv` to run tests:**
 
 ```bash
 source .venv/bin/activate
-pytest features/ -v
+pytest -v
 ```
 
 **Static analysis** — `mypy` and `ruff` are configured in `pyproject.toml` and
@@ -561,7 +570,7 @@ are dev-only, not runtime dependencies:
 pip install --group dev
 source .venv/bin/activate
 ruff check .
-mypy onto features conftest.py
+mypy onto features tests conftest.py
 ```
 
 ## 📜 License

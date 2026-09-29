@@ -35,6 +35,8 @@ onto/
 ├── ingestion.py       # txt/md/pdf/docx loading, fingerprinting
 ├── chunking.py        # fixed/semantic chunking
 ├── llm.py             # provider-neutral LLM contract (CompletionRequest, LLM, LLMError)
+├── llm_openai.py      # OpenAI adapter for the LLM contract
+├── llm_mistral.py     # Mistral adapter for the LLM contract
 ├── extraction.py      # LLM calls, prompts, batching
 ├── schema_gen.py      # T-Box — LinkML schema generation
 ├── instance_gen.py    # A-Box — LinkML instance generation
@@ -45,6 +47,8 @@ onto/
 features/
 ├── *.feature
 └── steps/
+tests/
+└── test_llm_adapters.py   # unit tests — adapters have no Gherkin contract
 ```
 
 ## 🎯 Engineering principles
@@ -109,10 +113,11 @@ Domain descriptions from `config.yaml` are always injected into the prompt when 
 
 **Always use the virtual environment `.venv` for all operations.**
 
-Run all tests:
+Run all tests — acceptance scenarios in `features/`, unit tests for the provider
+adapters in `tests/`:
 ```bash
 source .venv/bin/activate
-pytest features/ -v
+pytest -v
 ```
 
 Run tests for a specific feature:
@@ -125,13 +130,13 @@ Lint and type-check (both configured in `pyproject.toml`, dev-only):
 ```bash
 source .venv/bin/activate
 ruff check .
-mypy onto features conftest.py
+mypy onto features tests conftest.py
 ```
 
 Run **all three** after every change — a step that leaves the suite green but
 introduces a lint or type error is not done.
 
-Tests **never** call the real Anthropic API. Replace the LLM client with a test double (`unittest.mock` / `pytest-mock`) in the step definitions — the business scenarios in `.feature` files speak only about what the language model "returns"/"is instructed to return", never about test doubles. Embeddings in tests: a fake/deterministic implementation (no model downloads in CI).
+Tests **never** call a real LLM API. Replace the model with a test double (`unittest.mock` / `pytest-mock`) in the step definitions and pass a fake client to the adapters — the business scenarios in `.feature` files speak only about what the language model "returns"/"is instructed to return", never about test doubles. Embeddings in tests: a fake/deterministic implementation (no model downloads in CI).
 
 **Note:** When defining steps for pytest-bdd, ensure that steps with the same text but different logic use unique function names or `target_fixture` to avoid conflicts.
 
@@ -147,6 +152,6 @@ Tests **never** call the real Anthropic API. Replace the LLM client with a test 
 
 1. All scenarios of the `.feature` pass (`pytest features/ -k <feature>`).
 2. The whole existing suite passes (`pytest`).
-3. `ruff check .` and `mypy onto features conftest.py` are clean.
+3. `ruff check .` and `mypy onto features tests conftest.py` are clean.
 4. Code is typed, duplicate-free, and follows the conventions above.
 5. No new dependencies outside the list allowed in README.
