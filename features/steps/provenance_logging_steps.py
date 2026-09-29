@@ -4,7 +4,7 @@ from pathlib import Path
 
 from pytest_bdd import given, parsers, then, when
 
-from features.steps.support import quoted, word
+from features.steps.support import log_events, log_lines, quoted, word
 from onto.chunking import chunk_document
 from onto.config import BuilderConfig
 from onto.ingestion import Document, compute_fingerprint
@@ -23,7 +23,7 @@ def source_ref_from_chunk(chunk: str) -> SourceRef:
 def assert_build_mode(state: dict, mode: str) -> None:
     """The feature asserts the build mode only in the creation scenario, so the
     update scenarios would otherwise never check that the log is stamped."""
-    stamped = {entry["mode"] for entry in log_events(state)}
+    stamped = {entry["mode"] for entry in log_events(state["log_path"])}
     assert stamped == {mode}, f"log is stamped {stamped}, expected {mode}"
 
 
@@ -36,24 +36,15 @@ def write_records(state: dict, path: Path, mode: str) -> None:
     assert_build_mode(state, mode)
 
 
-def log_lines(state: dict) -> list[str]:
-    text = state["log_path"].read_text(encoding="utf-8")
-    return [line for line in text.splitlines() if line.strip()]
-
-
-def log_events(state: dict) -> list[dict]:
-    return [json.loads(line) for line in log_lines(state)]
-
-
 def find_event(state: dict, name: str) -> dict:
-    entries = log_events(state)
+    entries = log_events(state["log_path"])
     names = [entry["event"] for entry in entries]
     assert name in names, f"no {name} event in the log: {names}"
     return next(entry for entry in entries if entry["event"] == name)
 
 
 def latest_event(state: dict) -> dict:
-    return log_events(state)[-1]
+    return log_events(state["log_path"])[-1]
 
 
 def document_built_from(text: str, path: str) -> SourceRef:
@@ -248,11 +239,11 @@ def step_then_skipped_document_with_reason(state: dict, name: str, reason: str) 
 
 @then("every line of provenance.jsonl parses as a JSON object")
 def step_then_every_line_is_a_json_object(state: dict) -> None:
-    for line in log_lines(state):
+    for line in log_lines(state["log_path"]):
         assert isinstance(json.loads(line), dict)
 
 
 @then("every entry has the fields event, id, source_documents, source_excerpt, timestamp, mode")
 def step_then_entries_have_required_fields(state: dict) -> None:
-    for entry in log_events(state):
+    for entry in log_events(state["log_path"]):
         assert entry.keys() >= REQUIRED_FIELDS, sorted(entry)

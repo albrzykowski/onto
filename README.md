@@ -4,9 +4,9 @@
 
 > [!WARNING]
 > **Early stage — this README is mostly a design document.** Configuration
-> loading, document ingestion, chunking, LLM extraction, T-Box generation and
-> the provenance log are implemented and covered by acceptance tests.
-> Everything else (CLI, A-Box generation, deduplication, both build modes) is
+> loading, document ingestion, chunking, LLM extraction, T-Box generation,
+> A-Box generation and the provenance log are implemented and covered by
+> acceptance tests. Everything else (CLI, deduplication, both build modes) is
 > **planned**; the sections describing it are marked 🚧. See
 > [Implementation status](#-implementation-status).
 
@@ -19,7 +19,7 @@
 | Chunking             | ✅ implemented   | `features/chunking.feature`           |
 | LLM extraction       | ✅ implemented   | `features/llm-extraction.feature`     |
 | T-Box generation     | ✅ implemented   | `features/tbox-generation.feature`    |
-| A-Box generation     | 🚧 planned       | `features/abox-generation.feature`    |
+| A-Box generation     | ✅ implemented   | `features/abox-generation.feature`    |
 | Provenance log       | ✅ implemented   | `features/provenance-logging.feature` |
 | Override mode        | 🚧 planned       | `features/override-mode.feature`      |
 | Update mode          | 🚧 planned       | `features/update-mode.feature`        |
@@ -40,11 +40,12 @@ tests today; the 🚧 rows have written criteria but no implementation.
 - Fixed-size chunking with configurable overlap, and stable `<path>#c<N>` chunk identifiers
 - Append-only JSONL provenance log: every ontology change is linked to the source document, chunk, **and the exact text excerpt it was derived from**
 - **T-Box** generated as a LinkML schema (`schema.yaml`): classes and slots with LLM-written descriptions, consolidated over the whole corpus, each citing its source chunks
+- **A-Box** generated as `instances.yaml`: concrete entities of the T-Box classes, keyed by their identifier, each carrying the source document, chunk and text excerpt it was read from. An instance of a class the T-Box does not define is never written — it is rejected and logged as `instance.rejected`
 - Class and relation names in English (ontology standard); source texts may be in any language
 
 ### 🚧 Planned
 
-- **A-Box** (instances) generation and deduplication via LLM
+- Deduplication via LLM (and embeddings, in update mode)
 - Two operating modes:
   - **Override** — the ontology is rebuilt from scratch
   - **Update** — the existing ontology is extended with new data (deduplication: embeddings + LLM verification)
@@ -555,16 +556,73 @@ one, so the acceptance tests run it through LinkML's own linter
 `error` level. `linkml` and `linkml-runtime` are dev-only dependencies: nothing
 in `onto` imports them at runtime, the schema is written as plain YAML.
 
+## 🧱 A-Box generation
+
+✅ Implemented — `onto/instance_gen.py`
+
+`generate_abox` turns the chunks into the concrete facts the corpus states, and
+writes them next to the T-Box it conforms to, as `<schema_dir>/instances.yaml`.
+
+```python
+from pathlib import Path
+
+from onto.config import load_config
+from onto.instance_gen import generate_abox
+from onto.llm_openai import OpenAILLM
+from onto.provenance import ProvenanceLog
+
+config = load_config("config.yaml")
+llm = OpenAILLM(api_key="sk-...")
+log = ProvenanceLog(Path("./ontology/provenance.jsonl"), "override")
+instances_path = generate_abox(chunks, config, llm, schema_path, log)
+```
+
+Each chunk is one request: the model is shown the classes and slots the written
+schema defines, and answers with the entities the text states. The schema is the
+**only** vocabulary — an instance of a class it does not define is never written,
+and a slot the class does not have is dropped.
+
+Instances are keyed by their identifier and carry the excerpt they were read
+from, so the file is self-describing without the log:
+
+```yaml
+instances:
+  VW_Golf:
+    class: Vehicle
+    has_engine: 1_6_TDI
+    annotations:
+      source_documents:
+        tag: source_documents
+        value:
+        - corpus/article1.txt#c3
+      source_excerpt:
+        tag: source_excerpt
+        value: The Golf is produced by VW and has a 1.6 TDI engine
+```
+
+An identifier is the name the text uses, written as one token: `VW Golf` becomes
+`VW_Golf`, and the value of a slot — which points at another entity — is
+normalised the same way. A later chunk stating an entity already written
+replaces it.
+
+### Validation
+
+`features/abox-generation.feature` requires the instances to conform to the
+schema, so the acceptance tests validate each entry against the class it declares
+with LinkML's own `Validator` and its `JsonschemaValidationPlugin`. A rejected
+instance is recorded in the provenance log as `instance.rejected`, with the
+reason `not_in_tbox` — it is never added to the schema either.
+
 ## 📁 Output structure
 
 🚧 **Partly implemented** — no build pipeline exists yet, so nothing writes
-`instances.yaml` or `state.json`; `schema.yaml` is written by
-`generate_tbox`, and `provenance.jsonl` by `ProvenanceLog`.
+`state.json`; `schema.yaml` and `instances.yaml` are written by `generate_tbox`
+and `generate_abox`, and `provenance.jsonl` by `ProvenanceLog`.
 
 ```
 ontology/
 ├── schema.yaml          # T-Box — LinkML schema (written by `generate_tbox`)
-├── instances.yaml       # A-Box — LinkML instances (planned)
+├── instances.yaml       # A-Box — LinkML instances (written by `generate_abox`)
 ├── provenance.jsonl     # build log (1 line = 1 event)
 └── state.json           # document fingerprints (for update mode, planned)
 ```
@@ -620,16 +678,17 @@ Every entry carries `event`, `id`, `source_documents`, `source_excerpt`,
 | `class.updated`      | —                       | an existing class gained a new source          |
 | `class.merged`       | `merged_ids`            | concepts folded into the surviving `id`         |
 | `class.rejected`     | `reason`                | e.g. `not_in_allowed_classes`                   |
+| `instance.rejected`  | `reason`                | e.g. `not_in_tbox`                             |
 | `document.skipped`   | `reason`                | e.g. `unchanged_fingerprint`; `id` is the path  |
 
-🚧 The log records events, but **nothing produces them yet** — `class.*` and
-`document.skipped` events are emitted by the T-Box, A-Box and update-mode
-builders, which are still planned. The vocabulary above is fixed by
-`features/provenance-logging.feature`.
+🚧 The vocabulary above is fixed by `features/provenance-logging.feature`. Only
+`instance.rejected` is emitted so far, by `generate_abox`; the `class.*` and
+`document.skipped` events belong to the override and update-mode builders, which
+are still planned.
 
 ## 🧪 Tests
 
-The project is built using the **ATDD** cycle — see `AGENTS.md` and the `features/` directory. 6 of the 10 features currently have acceptance tests (configuration loading, document ingestion, chunking, LLM extraction, T-Box generation, provenance logging). The provider adapters in `onto/llm_openai.py` and `onto/llm_mistral.py` have no Gherkin contract — they only translate a `CompletionRequest` — so they are covered by the unit tests in `tests/test_llm_adapters.py`, which use a fake client and never call a real API.
+The project is built using the **ATDD** cycle — see `AGENTS.md` and the `features/` directory. 7 of the 10 features currently have acceptance tests (configuration loading, document ingestion, chunking, LLM extraction, T-Box generation, A-Box generation, provenance logging). The provider adapters in `onto/llm_openai.py` and `onto/llm_mistral.py` have no Gherkin contract — they only translate a `CompletionRequest` — so they are covered by the unit tests in `tests/test_llm_adapters.py`, which use a fake client and never call a real API.
 
 **Use the virtual environment `.venv` to run tests:**
 
