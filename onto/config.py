@@ -25,6 +25,8 @@ class BuilderConfig(BaseModel):
     chunking_strategy: str = "fixed"
     max_chunk_tokens: int = 2000
     overlap_tokens: int = 200
+    batch_size: int = Field(default=1, ge=1)
+    model: str = "claude-sonnet-4-5"
     similarity_threshold: float = 0.85
     api_key: str | None = Field(default=None, validate_default=True)
 

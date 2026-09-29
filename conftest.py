@@ -9,7 +9,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 @pytest.fixture
 def state() -> dict:
     """Mutable per-test state shared between step definitions."""
-    return {"config": None, "error": None, "records": []}
+    return {"chunks": [], "config": None, "error": None, "records": []}
 
 
 @pytest.fixture(autouse=True)

@@ -140,6 +140,11 @@ chunking_strategy: fixed           # fixed | semantic
 max_chunk_tokens: 2000
 overlap_tokens: 200
 
+# Extraction — how many chunks are sent to the LLM in a single request,
+# and which model answers them.
+batch_size: 1
+model: claude-sonnet-4-5
+
 similarity_threshold: 0.85
 
 # The API key. Leave it out to read ANTHROPIC_API_KEY from the environment.
@@ -164,6 +169,8 @@ Three scoping modes for the extraction prompt:
 | `chunking_strategy`    | `str`                | `"fixed"`   |
 | `max_chunk_tokens`     | `int`                | `2000`      |
 | `overlap_tokens`       | `int`                | `200`       |
+| `batch_size`           | `int` (≥ 1)          | `1`         |
+| `model`                | `str`                | `"claude-sonnet-4-5"` |
 | `similarity_threshold` | `float`              | `0.85`      |
 | `api_key`              | `str \| None`        | env var     |
 
@@ -359,6 +366,70 @@ chunks: an unsupported `chunking_strategy` (only `fixed` is implemented),
 `max_chunk_tokens` below 1, or `overlap_tokens` not in `0..max_chunk_tokens - 1`
 — the last one would otherwise loop forever.
 
+## 🧠 LLM extraction
+
+✅ Implemented — `onto/extraction.py`
+
+`extract` sends chunks to the LLM and returns the candidate classes and relations
+it proposes. It takes the chunks, a `BuilderConfig` and **a client you construct
+yourself** — `onto` sends the requests but does not depend on the Anthropic SDK:
+
+```python
+from pathlib import Path
+
+import anthropic
+
+from onto.chunking import chunk_document
+from onto.config import load_config
+from onto.extraction import extract
+from onto.ingestion import load_documents
+
+config = load_config("config.yaml")
+chunks = [chunk for document in load_documents(Path("./corpus")) for chunk in chunk_document(document, config)]
+
+for candidate in extract(chunks, config, anthropic.Anthropic()):
+    print(candidate.kind, candidate.name, candidate.source_excerpt)
+```
+
+The client only has to offer `client.messages.create(...)`; the model is taken from
+`config.model` and the reply is expected to be a single JSON object.
+
+### The `Candidate` model
+
+| Attribute          | Type                    | Meaning                                        |
+| ------------------ | ----------------------- | ---------------------------------------------- |
+| `kind`             | `"class" \| "relation"` | what the candidate proposes                    |
+| `name`             | `str`                   | normalised: PascalCase for a class, snake_case for a relation |
+| `source_documents` | `list[SourceRef]`       | the chunks the candidate was read from         |
+| `source_excerpt`   | `str`                   | verbatim text the LLM quoted                   |
+
+The LLM is instructed to name concepts in **English, whatever language the source
+is written in**; the returned names are then normalised to the required casing, so
+`engine type` becomes `EngineType` and `ProducedBy` becomes `produced_by`.
+
+### Batching and failures
+
+`batch_size` chunks are sent in one request (default `1`, one request per chunk).
+A request that fails — the API, the network, or a reply that is not the expected
+JSON — is logged at `ERROR` naming the chunks and then skipped, so a single bad
+chunk never aborts the build.
+
+Because the model read a whole batch at once, a candidate cites every chunk of its
+batch in `source_documents`; `source_excerpt` is what pins down the exact text.
+
+### How the prompt is scoped
+
+| Configuration                                                | Prompt section                                                                                     |
+| ------------------------------------------------------------ | -------------------------------------------------------------------------------------------------- |
+| `allowed_classes` / `allowed_relations` set                  | the domains, `Predefined classes: …`, `Predefined relations: …`, and *"use only these concepts and nothing else"* |
+| only `domains` set                                           | the domains with their descriptions, and *"extract the concepts that are relevant to the domains"*   |
+| neither set                                                   | no scope section at all — the LLM picks the significant concepts itself                              |
+
+Domain descriptions from `domain_descriptions` are always injected when `domains`
+is set. Candidates are **not** filtered against the allow-lists here: the lists
+constrain the prompt, and rejecting what slips through is the deduplication step's
+job.
+
 ## 📁 Output structure
 
 🚧 **Partly implemented** — no build pipeline exists yet, so nothing writes
@@ -433,7 +504,7 @@ builders, which are still planned. The vocabulary above is fixed by
 
 ## 🧪 Tests
 
-The project is built using the **ATDD** cycle — see `AGENTS.md` and the `features/` directory. 4 of the 10 features currently have acceptance tests (configuration loading, document ingestion, chunking, provenance logging).
+The project is built using the **ATDD** cycle — see `AGENTS.md` and the `features/` directory. 5 of the 10 features currently have acceptance tests (configuration loading, document ingestion, chunking, LLM extraction, provenance logging).
 
 **Use the virtual environment `.venv` to run tests:**
 
