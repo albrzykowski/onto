@@ -45,6 +45,19 @@ def test_the_texts_reach_the_provider_and_come_back_as_vectors(
     assert fake.requests[0]["model"] == "mistral/mistral-embed"
 
 
+def test_the_key_is_sent_to_the_provider(monkeypatch: pytest.MonkeyPatch) -> None:
+    """`api_key` on its own is not a credential the provider recognises: LiteLLM will not look
+    it up from the environment for a request that names one, so a build that forgets to pass it
+    leaves without credentials and is answered `Invalid API Key` — the same as a wrong key."""
+    fake = FakeEmbedding()
+    install(monkeypatch, fake)
+    embedder: Embedder = LiteLLMEmbedder(api_key="test-key", model="mistral/mistral-embed")
+
+    embedder.embed(TEXTS)
+
+    assert fake.requests[0]["api_key"] == "test-key"
+
+
 def test_the_vectors_keep_the_order_of_the_texts(monkeypatch: pytest.MonkeyPatch) -> None:
     install(monkeypatch, FakeEmbedding())
     embedder: Embedder = LiteLLMEmbedder(api_key="test-key", model="mistral/mistral-embed")

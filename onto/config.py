@@ -31,6 +31,7 @@ class BuilderConfig(BaseModel):
     embedding_model: str = "mistral/mistral-embed"
     similarity_threshold: float = 0.85
     api_key: str | None = Field(default=None, validate_default=True)
+    embedding_api_key: str | None = None
 
     @field_validator("mode")
     @classmethod

@@ -67,17 +67,36 @@ one account and its embeddings to another.
 `model` is the model that answers the prompts, `embedding_model` the one that turns concept
 names into vectors for update mode. They are separate because a provider embeds with a
 different model than it answers with: `mistral/mistral-large-latest` and `mistral/mistral-embed`
-are both Mistral, and neither would work in the other's place. To build with OpenAI, name
-OpenAI in both:
+are both Mistral, and neither would work in the other's place.
+
+**Name both, or only the first will change.** `embedding_model` defaults to
+`mistral/mistral-embed`, so setting `model: openai/gpt-4o` and nothing else sends your prompts
+to OpenAI and your vectors to Mistral, on a build that never says so. To build with OpenAI,
+name OpenAI in both:
 
 ```yaml
 model: openai/gpt-4o
 embedding_model: openai/text-embedding-3-small
 ```
 
-The `api_key` field is what the adapter is given, so one key is all a build needs. Left out,
-the key is read from the `ANTHROPIC_API_KEY` environment variable. From the command line the
-adapter is built for you; from Python you pass `api_key=config.api_key` yourself.
+The two may name different providers — there is no rule that says a build has to answer and
+embed in the same place. When they do, they need different keys, so `embedding_api_key` sits
+beside `api_key`:
+
+```yaml
+model: openai/gpt-4o
+api_key: "sk-your-openai-key"
+embedding_model: mistral/mistral-embed
+embedding_api_key: "your-mistral-key"
+```
+
+Left out, `embedding_api_key` falls back to `api_key`, which is the right answer whenever both
+names belong to the same provider.
+
+The `api_key` field is what the adapter is given, so one key is all a build needs as long as
+both models name the same provider. Left out, the key is read from the `ANTHROPIC_API_KEY`
+environment variable. From the command line the adapter is built for you; from Python you pass
+`api_key=config.api_key` yourself.
 
 ### 4. Prepare the input documents
 
@@ -157,8 +176,8 @@ type is put to the model to resolve. The provenance log of the earlier build is 
 to, not replaced, and a run that finds nothing new writes nothing at all.
 
 Telling a repeated concept from a new one is done with embeddings, so update mode is given
-an embedder. The one that ships uses the `embedding_model` from the configuration, which means
-the build needs nothing beyond the key it already has:
+an embedder. The one that ships uses the `embedding_model` and the `embedding_api_key` from the
+configuration, falling back to `api_key` when both models name the same provider:
 
 ```python
 from onto.builder import build
@@ -170,7 +189,10 @@ build(
     output_dir=Path("ontology"),
     config=config,
     llm=LiteLLMLLM(api_key=config.api_key),
-    embedder=LiteLLMEmbedder(api_key=config.api_key, model=config.embedding_model),
+    embedder=LiteLLMEmbedder(
+        api_key=config.embedding_api_key or config.api_key,
+        model=config.embedding_model,
+    ),
 )
 ```
 

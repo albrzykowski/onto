@@ -44,11 +44,13 @@ def llm_for(config: BuilderConfig) -> LLM:
 
 
 def embedder_for(config: BuilderConfig) -> Embedder:
-    """Update mode needs embeddings, and it takes them from the provider that answers the
-    prompts, so a build needs one key and one account rather than two."""
+    """Update mode needs embeddings, and they come from whichever provider `embedding_model`
+    names — which is not necessarily the one that answers the prompts."""
     from onto.embeddings import LiteLLMEmbedder
 
-    return LiteLLMEmbedder(api_key=config.api_key, model=config.embedding_model)
+    return LiteLLMEmbedder(
+        api_key=config.embedding_api_key or config.api_key, model=config.embedding_model
+    )
 
 
 def _add_arguments(command: argparse.ArgumentParser) -> None:
