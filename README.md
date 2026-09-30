@@ -30,9 +30,9 @@ Only the provider you name in the configuration has to be installed.
 
 #### What the provider layers cost
 
-Both provider adapters are being migrated to [LiteLLM](https://github.com/BerriAI/litellm),
-which is what will let one adapter answer for every provider. It is the heaviest dependency
-this project takes, and on Linux it needs a native library:
+The chat adapter runs on [LiteLLM](https://github.com/BerriAI/litellm), which is what lets one
+adapter answer for every provider. It is the heaviest dependency this project takes, and on
+Linux it needs a native library:
 
 ```bash
 # NixOS only: tokenizers links against the C++ runtime, which is not on the default path
@@ -40,9 +40,8 @@ export LD_LIBRARY_PATH=/nix/store/<hash>-gcc-*-lib/lib:$LD_LIBRARY_PATH
 ```
 
 Measured on `litellm` 1.103.1: 134 MB in `site-packages`, 61 installed packages, and roughly
-15 seconds for the first `import litellm`. The library itself is 212 KB. Until that migration
-lands, the adapters still speak to `mistralai` and `openai` directly and none of this applies
-to them.
+15 seconds for the first `import litellm`. The library itself is 212 KB. The embeddings still
+speak to `mistralai` and `openai` directly, and none of this applies to them yet.
 
 ### 3. Configure the model, the provider and the API key
 
@@ -96,11 +95,11 @@ from pathlib import Path
 
 from onto.builder import build
 from onto.config import load_config
-from onto.llm_mistral import MistralLLM
+from onto.llm_litellm import LiteLLMLLM
 
 config = load_config("config.yaml")
 
-llm = MistralLLM(api_key=config.api_key)
+llm = LiteLLMLLM(api_key=config.api_key, provider=config.provider)
 build(input_dir=Path("corpus"), output_dir=Path("ontology"), config=config, llm=llm)
 ```
 
@@ -151,13 +150,13 @@ the build needs nothing beyond the key it already has:
 ```python
 from onto.builder import build
 from onto.embeddings import MistralEmbedder
-from onto.llm_mistral import MistralLLM
+from onto.llm_litellm import LiteLLMLLM
 
 build(
     input_dir=Path("corpus"),
     output_dir=Path("ontology"),
     config=config,
-    llm=MistralLLM(),
+    llm=LiteLLMLLM(api_key=config.api_key, provider=config.provider),
     embedder=MistralEmbedder(),
 )
 ```

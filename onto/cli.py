@@ -38,13 +38,9 @@ The configuration file names the provider, the model and the key the build runs 
 def llm_for(config: BuilderConfig) -> LLM:
     """The chat adapter of the configured provider, imported only where it is used: a build
     naming one provider must not fail because the SDK of the other one is absent."""
-    if config.provider == "mistral":
-        from onto.llm_mistral import MistralLLM
+    from onto.llm_litellm import LiteLLMLLM
 
-        return MistralLLM(api_key=config.api_key)
-    from onto.llm_openai import OpenAILLM
-
-    return OpenAILLM(api_key=config.api_key)
+    return LiteLLMLLM(api_key=config.api_key, provider=config.provider)
 
 
 def embedder_for(config: BuilderConfig) -> Embedder:

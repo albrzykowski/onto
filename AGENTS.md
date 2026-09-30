@@ -125,6 +125,12 @@ Domain descriptions from `config.yaml` are always injected into the prompt when 
 
 **Always use the virtual environment `.venv` for all operations.**
 
+On NixOS, `import litellm` fails without the C++ runtime that `tokenizers` links against, so
+`pytest` cannot even collect. Export it before running anything:
+```bash
+export LD_LIBRARY_PATH=/nix/store/<hash>-gcc-15.3.0-lib/lib:$LD_LIBRARY_PATH
+```
+
 Run all tests — acceptance scenarios in `features/`, unit tests for the provider
 adapters in `tests/`:
 ```bash
