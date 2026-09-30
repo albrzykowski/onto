@@ -3,9 +3,8 @@
 This file defines the working rules for the agent building the **Auto Ontology Builder** project (Python, LinkML, LiteLLM). The agent works in an **ATDD (Acceptance Test-Driven Development)** cycle.
 
 Any provider is reached through LiteLLM, and the provider is named by the model rather than by
-a key of its own. The one environment variable this project reads is `ANTHROPIC_API_KEY`, and
-its name is a historical accident: it holds the key for whichever provider `model` names, and an
-Anthropic key is not what `mistral/mistral-embed` will accept.
+a key of its own. **No environment variable is read at all**: both keys come from `config.yaml`,
+and a missing one is a `ConfigValidationError` that names the field.
 
 ## 🔄 Working cycle (ATDD) — mandatory
 
@@ -102,8 +101,8 @@ Examples of what is allowed:
 
 ```python
 # a zero-length window would never advance -> infinite loop
-if not 0 <= overlap < size:
-    raise ChunkError(...)
+if not 0 <= overlap_tokens < max_chunk_tokens:
+    raise ConfigValidationError(...)
 
 
 def _load_docx(path: Path) -> str:
@@ -121,15 +120,17 @@ Examples of what is not:
 
 When a comment is genuinely warranted, write *why*, never *what*.
 
-## 🤖 LLM prompt scoping — three modes
+## 🤖 LLM prompt scoping — two modes
 
-The extraction prompt is built from the configuration with exactly three scoping levels:
+The extraction prompt is built from the configuration with exactly two scoping levels, and a
+build is always inside a domain because `domains` may not be empty:
 
-1. `allowed_classes` / `allowed_relations` **and** domains set → the prompt instructs the LLM to use **only** the predefined concepts. For prompt-efficiency, the LLM must never propose anything outside the allow-lists.
-2. Domains (with their descriptions) set, no allow-lists → the prompt instructs the LLM to extract whatever concepts are relevant **within those domains**. A `domains: [automotive]` prompt must never yield `Recipe`.
-3. Neither domains nor allow-lists → the LLM decides which concepts and relations are significant on its own.
+1. `allowed_classes` / `allowed_relations` naming anything → the prompt instructs the LLM to use **only** the predefined concepts. For prompt-efficiency, the LLM must never propose anything outside the allow-lists.
+2. Both allow-lists empty → the prompt instructs the LLM to extract whatever concepts are relevant **within those domains**. An `automotive` prompt must never yield `Recipe`.
 
-Domain descriptions from `config.yaml` are always injected into the prompt when domains are set.
+There is no third level. The unscoped prompt was removed, because a configuration that says
+nothing about the subject matter is a configuration the model fills in with whatever it likes.
+Domain descriptions from `config.yaml` are always injected into the prompt.
 
 ## 🧪 Testing
 
@@ -179,8 +180,9 @@ The LiteLLM adapters have no client object to inject: `litellm.completion` and `
 - **Exception — the schema linter.** `linkml` is Apache-2.0 and dev-only, but it requires `click` and `jinja2`, both BSD-3-Clause. It is kept because the T-Box scenarios validate the generated schema with it (`features/steps/tbox_generation_steps.py`), which no smaller dependency does. Nothing in `onto/` imports it: the exception covers the test toolchain alone, and drops out with the dev group.
 - **Exception — the LiteLLM adapter.** `litellm` is MIT, but installing it pulls `click` (BSD-3-Clause) and `Jinja2` (BSD-3-Clause) as runtime dependencies — the two packages this project avoided when it chose `argparse` over `typer`. It is accepted because one adapter then answers for every provider, and the model name carries its provider, so the per-provider modules and the `provider` key go away. Measured on `litellm` 1.103.1: 134 MB in `site-packages`, ~15 s for `import litellm`, 61 installed packages, and `tokenizers` needs `libstdc++.so.6`, which on NixOS means `LD_LIBRARY_PATH` pointing at `gcc-15.3.0-lib/lib`. Unlike the linter, this one is a runtime dependency of `onto/`, not of the test toolchain.
 - **The exceptions are not optional.** `litellm` requires `openai>=2.20,<3`, and `onto/` imports `openai` for `openai.OpenAIError` because LiteLLM's failures derive from it. Do not drop it back to an extra, and do not "simplify" either `except` clause to `litellm.APIError` — that class is not the base of LiteLLM's errors and catches nothing.
-- User configuration only via YAML + the `ANTHROPIC_API_KEY` environment variable (never hard-coded). The variable's name is historical: it is the fallback for `api_key`, and its value is a key for whichever provider the models name, not necessarily an Anthropic one.
-- Two keys, because a build may answer and embed with different providers: `api_key` for `model`, `embedding_api_key` for `embedding_model`, the latter falling back to the former. `embedding_model` defaults to `mistral/mistral-embed`, so naming only `model` changes only the chat provider and leaves the vectors going to Mistral — the README warns about this in the configuration section.
+- User configuration only via YAML (never hard-coded), and **every field is required**. There are no defaults: a field left out is a `ConfigValidationError` naming it.
+- `domains` maps a subject area to a description, and may not be empty. `allowed_classes` and `allowed_relations` map a concept to a description and may be `{}`; a named concept always needs one, because the description is what reaches the prompt.
+- Two keys, because a build may answer and embed with different providers: `api_key` for `model`, `embedding_api_key` for `embedding_model`. There is no fallback between them and no environment variable — naming only `model` no longer changes just the chat provider, since every field must be stated.
 - Every ontology change (class, slot, instance) **must** carry provenance: source document path, chunk id, **and the source text excerpt** it was derived from.
 - A single failing document (corrupted PDF, etc.) must not abort the build — log and skip it.
 - Commit after every green ATDD cycle: `feat: <feature-name>` or `refactor: <feature-name>`.

@@ -5,9 +5,8 @@ from pathlib import Path
 import yaml
 from pytest_bdd import given, parsers, then, when
 
-from features.steps.support import FakeLLM, log_events, quoted, split_names, word
+from features.steps.support import FakeLLM, log_events, quoted, split_names, valid_config, word
 from onto.builder import STATE_FILE_NAME, build
-from onto.config import BuilderConfig
 from onto.ingestion import compute_fingerprint
 
 CORPUS = "corpus"
@@ -301,7 +300,7 @@ def step_given_llm_returns_resembling_class(
 def step_given_llm_returns_class_above_the_configured_threshold(
     state: dict, workdir: Path, name: str, other: str
 ) -> None:
-    state["resemblance"] = BuilderConfig(mode="update").similarity_threshold + 0.05
+    state["resemblance"] = valid_config(mode="update").similarity_threshold + 0.05
     proposed_class(state, workdir, name, resembles=other)
 
 
@@ -374,7 +373,7 @@ def step_when_update_mode_runs(state: dict, workdir: Path, output_dir: Path) -> 
     build(
         input_dir(workdir),
         output_dir,
-        BuilderConfig(mode="update"),
+        valid_config(mode="update"),
         state["client"],
         FakeEmbedder(state.get("resemblances", {})),
     )

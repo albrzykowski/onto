@@ -10,7 +10,7 @@ import pytest
 import yaml
 from pytest_bdd import given, parsers, then, when
 
-from features.steps.support import FakeLLM, quoted
+from features.steps.support import VALID_CONFIG, FakeLLM, quoted, valid_config
 from onto.builder import build
 from onto.cli import main
 from onto.config import BuilderConfig
@@ -169,7 +169,7 @@ def step_given_new_document(state: dict, workdir: Path, name: str) -> None:
 
 @given(parsers.re(rf'a configuration file {quoted("name")} with mode {quoted("mode")}'))
 def step_given_configuration_file(workdir: Path, name: str, mode: str) -> None:
-    write_yaml(workdir / name, {"mode": mode, "model": "mistral-large-latest"})
+    write_yaml(workdir / name, {**VALID_CONFIG, "mode": mode, "model": "mistral-large-latest"})
 
 
 @given(parsers.re(rf'an existing ontology in the directory {quoted("name")}'))
@@ -177,11 +177,14 @@ def step_given_existing_ontology(workdir: Path, name: str) -> None:
     """What an earlier build wrote, produced by that build rather than written by hand, so the
     update is handed a schema, a provenance log and a state to extend."""
     write_document(workdir, "corpus", FIRST_TEXT)
-    write_yaml(workdir / "config.yaml", {"mode": "override", "model": "mistral-large-latest"})
+    write_yaml(
+        workdir / "config.yaml",
+        {**VALID_CONFIG, "mode": "override", "model": "mistral-large-latest"},
+    )
     build(
         input_dir=workdir / "corpus",
         output_dir=workdir / name,
-        config=BuilderConfig(mode="override"),
+        config=valid_config(mode="override"),
         llm=client_for([FIRST_CLASS], EXISTING_INSTANCE, FIRST_CLASS),
     )
 

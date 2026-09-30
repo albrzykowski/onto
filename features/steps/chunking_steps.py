@@ -3,9 +3,8 @@ from pathlib import Path
 
 from pytest_bdd import given, parsers, then, when
 
-from features.steps.support import quoted
+from features.steps.support import quoted, valid_config
 from onto.chunking import chunk_document, tokenize
-from onto.config import BuilderConfig
 from onto.ingestion import Document, compute_fingerprint
 
 DOCUMENT_PATH = Path("corpus/article1.txt")
@@ -32,7 +31,7 @@ def overlap_length(left: list[str], right: list[str]) -> int:
 
 @given(parsers.re(rf'a configuration with chunking.strategy {quoted("strategy")}'))
 def step_given_chunking_strategy(state: dict, strategy: str):
-    state["config"] = BuilderConfig(chunking_strategy=strategy)
+    state["config"] = valid_config(chunking_strategy=strategy)
 
 
 @given(parsers.re(r"max_chunk_tokens (?P<value>\d+)"))

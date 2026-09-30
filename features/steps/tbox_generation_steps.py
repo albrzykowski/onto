@@ -5,8 +5,7 @@ import yaml
 from linkml.linter.linter import Linter
 from pytest_bdd import given, parsers, then, when
 
-from features.steps.support import FakeLLM, quoted, split_names, word
-from onto.config import BuilderConfig
+from features.steps.support import FakeLLM, quoted, split_names, valid_config, word
 from onto.extraction import Candidate, CandidateKind
 from onto.provenance import SourceRef
 from onto.schema_gen import generate_tbox
@@ -64,7 +63,7 @@ def client_for(state: dict) -> FakeLLM:
 
 def generate(state: dict, output_dir: Path) -> None:
     state["schema_path"] = generate_tbox(
-        state["candidates"], BuilderConfig(), client_for(state), output_dir
+        state["candidates"], valid_config(), client_for(state), output_dir
     )
     state["document"] = yaml.safe_load(state["schema_path"].read_text(encoding="utf-8"))
 

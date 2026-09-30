@@ -88,33 +88,35 @@ def _snake_case(name: str) -> str:
     return "_".join(word.lower() for word in _words(name))
 
 
-def _domain_lines(config: BuilderConfig) -> list[str]:
-    descriptions = config.domain_descriptions
-    return [
-        "Domains:",
-        *(
-            f"- {domain}: {descriptions[domain]}" if domain in descriptions else f"- {domain}"
-            for domain in config.domains
-        ),
-    ]
+def _described_lines(concepts: dict[str, str]) -> list[str]:
+    """The concepts as the prompt states them: a name, then what it means.
+
+    A bare list of names leaves the model to work out what each one covers, and a name it
+    has never seen is one it is most likely to replace with its own wording.
+    """
+    return [f"- {name}: {description}" for name, description in concepts.items()]
 
 
 def _scope(config: BuilderConfig) -> str:
-    """The section that narrows the set of concepts the LLM may propose; empty when unscoped."""
+    """The section that narrows the set of concepts the LLM may propose.
+
+    With an allow-list the model may only use the concepts it is given; with domains alone
+    it is scoped to the domain but may still name what it finds, which is the whole point
+    of extracting an ontology rather than transcribing a list.
+    """
+    constraints = ["Domains:", *_described_lines(config.domains)]
     if config.allowed_classes or config.allowed_relations:
-        constraints = [
-            *_domain_lines(config),
-            f"Predefined classes: {', '.join(config.allowed_classes) or 'none'}",
-            f"Predefined relations: {', '.join(config.allowed_relations) or 'none'}",
+        constraints += [
+            "Predefined classes:",
+            *_described_lines(config.allowed_classes),
+            "Predefined relations:",
+            *_described_lines(config.allowed_relations),
             "Use only these concepts and nothing else; do not propose anything outside this list.",
         ]
-    elif config.domains:
-        constraints = [
-            *_domain_lines(config),
-            "Extract the concepts that are relevant to the domains above, and nothing else.",
-        ]
     else:
-        return ""
+        constraints.append(
+            "Extract the concepts that are relevant to the domains above, and nothing else."
+        )
     return "\n".join(["Scope of the ontology:", *constraints])
 
 

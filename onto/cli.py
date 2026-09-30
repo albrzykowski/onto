@@ -6,12 +6,7 @@ import sys
 from pathlib import Path
 
 from onto.builder import BuildError, build
-from onto.config import (
-    BuilderConfig,
-    ConfigValidationError,
-    MissingAPIKeyError,
-    load_config,
-)
+from onto.config import BuilderConfig, ConfigValidationError, load_config
 from onto.dedup import Embedder, EmbeddingError
 from onto.llm import LLM, LLMError
 
@@ -36,8 +31,8 @@ The configuration file names the models and the key the build runs with:
 
 
 def llm_for(config: BuilderConfig) -> LLM:
-    """The chat adapter of the configured provider, imported only where it is used: a build
-    naming one provider must not fail because the SDK of the other one is absent."""
+    """The chat adapter LiteLLM builds from the model the configuration names; the provider
+    is the part of the name before the slash."""
     from onto.llm_litellm import LiteLLMLLM
 
     return LiteLLMLLM(api_key=config.api_key)
@@ -48,9 +43,7 @@ def embedder_for(config: BuilderConfig) -> Embedder:
     names — which is not necessarily the one that answers the prompts."""
     from onto.embeddings import LiteLLMEmbedder
 
-    return LiteLLMEmbedder(
-        api_key=config.embedding_api_key or config.api_key, model=config.embedding_model
-    )
+    return LiteLLMEmbedder(api_key=config.embedding_api_key, model=config.embedding_model)
 
 
 def _add_arguments(command: argparse.ArgumentParser) -> None:
@@ -91,7 +84,6 @@ def main(argv: list[str] | None = None) -> int:
         ConfigValidationError,
         EmbeddingError,
         LLMError,
-        MissingAPIKeyError,
         OSError,
     ) as error:
         # a user who mistyped a path or left out a key is told what went wrong, not shown the

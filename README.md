@@ -48,21 +48,40 @@ dependency too, not an extra: LiteLLM answers with OpenAI-shaped responses, so i
 derive from `openai.APIError`, and both adapters catch that class rather than
 `litellm.APIError`, which is not the base of LiteLLM's errors and would catch nothing.
 
-### 3. Configure the models and the API key
+### 3. Describe the ontology, the models and the API keys
 
-Create a `config.yaml` in the repository root:
+Copy `config.example.yaml` to `config.yaml` and adjust it for your setup. You can also create `config.yaml` manually:
 
 ```yaml
+domains:
+  automotive: "Passenger and commercial vehicles and their components"
+allowed_classes:
+  Vehicle: "A machine that carries people or goods"
+allowed_relations:
+  produced_by: "Relates a product to the organization that makes it"
 model: mistral/mistral-large-latest
 embedding_model: mistral/mistral-embed
 chunking_strategy: fixed
 max_chunk_tokens: 2000
 overlap_tokens: 200
 batch_size: 4
+max_concepts_per_batch: 5
 mode: override
 similarity_threshold: 0.85
 api_key: "your_api_key"
+embedding_api_key: "your_api_key"
 ```
+
+**Every field is required.** There are no defaults and nothing is read from the environment,
+so the file above is the whole configuration; a field left out is a `ConfigValidationError`
+that names it. `domains` may not be empty, and every concept you name in any of the three
+maps needs a description, because the description is what reaches the prompt.
+
+`domains` narrows the subject matter; `allowed_classes` and `allowed_relations` go further and
+list the concepts themselves. List either of the two allow-lists and the model is told to use
+only those names. Leave both maps as `{}` and the model picks the concepts that matter within
+`domains` — but it still works inside them, and a `domains: [automotive]` build never yields
+a `Recipe`.
 
 Each model name carries its provider: the part before the slash decides who answers. This is
 the only place a provider is named, which is what keeps a build from sending its prompts to
@@ -71,12 +90,8 @@ one account and its embeddings to another.
 `model` is the model that answers the prompts, `embedding_model` the one that turns concept
 names into vectors for update mode. They are separate because a provider embeds with a
 different model than it answers with: `mistral/mistral-large-latest` and `mistral/mistral-embed`
-are both Mistral, and neither would work in the other's place.
-
-**Name both, or only the first will change.** `embedding_model` defaults to
-`mistral/mistral-embed`, so setting `model: openai/gpt-4o` and nothing else sends your prompts
-to OpenAI and your vectors to Mistral, on a build that never says so. To build with OpenAI,
-name OpenAI in both:
+are both Mistral, and neither would work in the other's place. **Name both**, so nothing is
+sent to an account the file never mentions:
 
 ```yaml
 model: openai/gpt-4o
@@ -84,8 +99,8 @@ embedding_model: openai/text-embedding-3-small
 ```
 
 The two may name different providers — there is no rule that says a build has to answer and
-embed in the same place. When they do, they need different keys, so `embedding_api_key` sits
-beside `api_key`:
+embed in the same place. When they do, they need different keys, which is what the second one
+is for:
 
 ```yaml
 model: openai/gpt-4o
@@ -94,13 +109,8 @@ embedding_model: mistral/mistral-embed
 embedding_api_key: "your-mistral-key"
 ```
 
-Left out, `embedding_api_key` falls back to `api_key`, which is the right answer whenever both
-names belong to the same provider.
-
-The `api_key` field is what the adapter is given, so one key is all a build needs as long as
-both models name the same provider. Left out, the key is read from the `ANTHROPIC_API_KEY`
-environment variable. From the command line the adapter is built for you; from Python you pass
-`api_key=config.api_key` yourself.
+From the command line both keys are handed to the adapters for you; from Python you pass
+`api_key=config.api_key` and `embedding_api_key=config.embedding_api_key` yourself.
 
 ### 4. Prepare the input documents
 
@@ -194,7 +204,7 @@ build(
     config=config,
     llm=LiteLLMLLM(api_key=config.api_key),
     embedder=LiteLLMEmbedder(
-        api_key=config.embedding_api_key or config.api_key,
+        api_key=config.embedding_api_key,
         model=config.embedding_model,
     ),
 )

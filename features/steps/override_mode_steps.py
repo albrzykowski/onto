@@ -4,9 +4,8 @@ from pathlib import Path
 import yaml
 from pytest_bdd import given, parsers, then, when
 
-from features.steps.support import FakeLLM, log_events, quoted, word
+from features.steps.support import FakeLLM, log_events, quoted, valid_config, word
 from onto.builder import STATE_FILE_NAME, build
-from onto.config import BuilderConfig
 from onto.ingestion import load_documents
 from onto.provenance import ProvenanceLog
 
@@ -164,7 +163,7 @@ def step_when_override_mode_runs(state: dict, workdir: Path, output_dir: Path) -
         write_document(workdir, "new.txt")
     state.setdefault("class_names", DEFAULT_CLASSES)
     state["client"] = client_for(state)
-    build(input_dir(workdir), output_dir, BuilderConfig(mode="override"), state["client"])
+    build(input_dir(workdir), output_dir, valid_config(mode="override"), state["client"])
 
 
 # Then: the schema that replaced the old one

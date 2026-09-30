@@ -27,11 +27,6 @@ def test_the_prompt_scopes_the_llm_to_domains_without_allow_lists():
     pass
 
 
-@scenario("llm-extraction.feature", "The LLM decides freely when nothing is scoped")
-def test_the_llm_decides_freely_when_nothing_is_scoped():
-    pass
-
-
 @scenario("llm-extraction.feature", "Batching LLM calls")
 def test_batching_llm_calls():
     pass

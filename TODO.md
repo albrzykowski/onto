@@ -3,31 +3,29 @@
 Scenariusze do dopisania przez autora Gherkina. Agent ich nie pisze — `AGENTS.md`
 zabrania edycji plików `.feature`; po ich dodaniu agent przechodzi normalny cykl ATDD.
 
-## `features/config-loading.feature` — dwa klucze
+## `features/config-loading.feature` — klucz wędruje do adaptera
 
-`api_key` obsługuje oba modele, a `embedding_api_key` w razie potrzeby osobno. Fallback
-`embedding_api_key or api_key` działa i jest przypięty testem jednostkowym, ale żaden scenariusz
-nie mówi o tym, że model czatu i model embeddingów **mogą należeć do różnych providerów** —
-a to jedyna sytuacja, w której drugi klucz jest potrzebny. Bez tego ktoś uzna, że
-`embedding_api_key` to duplikat i go usunie.
+`api_key` i `embedding_api_key` są obowiązkowe i niepuste, a `onto/cli.py:llm_for` oraz
+`embedder_for` przekazują je do adapterów. Nic nie pilnuje, że klucz faktycznie wędruje:
+regresja wyglądałaby jak zły klucz, zrotowany klucz i klucz w ogóle nieprzekazany —
+trzy różne awarie, jeden komunikat błędu (`Invalid API Key`).
 
 ```gherkin
-  Scenario: The embeddings key may be a different provider's
+  Scenario: The two keys reach their own adapters
     Given the configuration has model "openai/gpt-4o" and api_key "sk-openai"
     And the configuration has embedding_model "mistral/mistral-embed" and embedding_api_key "sk-mistral"
-    When the configuration is loaded
-    Then the LLM client is initialized with the key "sk-openai"
-    And the embedder client is initialized with the key "sk-mistral"
+    When the adapters are built for the run
+    Then the LLM adapter is given the key "sk-openai"
+    And the embedder adapter is given the key "sk-mistral"
 ```
 
-Warto rozważyć przy okazji, skoro plik jest otwarty — te dwa z `AGENTS.md`:
+Warto przy okazji przypiąć, że model i embedding mogą należeć do **różnych** providerów —
+to jedyna sytuacja, w której drugi klucz jest potrzebny, a bez scenariusza ktoś uzna
+`embedding_api_key` za duplikat i go usunie.
 
-- `onto/cli.py:llm_for` przekazuje `config.api_key` do adaptera. Bez scenariusza nic nie pilnuje,
-  że klucz wędruje do adaptera; regresja wyglądałaby jak zły klucz, zrotowany klucz i klucz
-  w ogóle nieprzekazany — trzy różne awarie, jeden komunikat błędu.
-- LiteLLM ma pierwszeństwo dla jawnego `api_key` nad `OPENAI_API_KEY` ze środowiska, więc
-  przypisanie z konfiguracji działa. Warto to przypiąć, zanim ktoś uzna, że klucz można
-  zostawić w środowisku.
+LiteLLM daje jawnie podanemu `api_key` pierwszeństwo nad `OPENAI_API_KEY` ze środowiska
+(zmierzone), więc przypisanie z konfiguracji działa — ale warto to przypiąć, zanim ktoś
+uzna, że klucz można zostawić w środowisku.
 
 ## `features/llm-extraction.feature` — ucięta odpowiedź
 

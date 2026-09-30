@@ -12,17 +12,6 @@ def state() -> dict:
     return {"candidates": [], "chunks": [], "config": None, "error": None, "records": []}
 
 
-@pytest.fixture(autouse=True)
-def isolate_api_key_env(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Keep scenarios independent of the developer's real API key.
-
-    BuilderConfig always requires an API key, so scenarios that build a
-    configuration get a dummy one; the scenarios about a missing key delete it
-    explicitly.
-    """
-    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-test")
-
-
 @pytest.fixture
 def config_path(tmp_path: Path) -> Path:
     """Config file location, seeded with a minimal configuration."""

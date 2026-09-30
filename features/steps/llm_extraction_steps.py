@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 from pytest_bdd import given, parsers, then, when
 
-from features.steps.support import FakeLLM, quoted, split_names
+from features.steps.support import FakeLLM, described, quoted, split_names, valid_config
 from onto.chunking import Chunk, chunk_document
 from onto.config import BuilderConfig
 from onto.extraction import extract
@@ -41,12 +41,12 @@ SNAKE_CASE = re.compile(r"[a-z][a-z0-9]*(_[a-z0-9]+)*")
 def make_chunk(number: int, text: str) -> Chunk:
     path = Path(f"corpus/article{number}.txt")
     document = Document(path=path, text=text, fingerprint=compute_fingerprint(text))
-    return chunk_document(document, BuilderConfig())[0]
+    return chunk_document(document, valid_config())[0]
 
 
 def config_for(state: dict) -> BuilderConfig:
     if state["config"] is None:
-        state["config"] = BuilderConfig()
+        state["config"] = valid_config()
     return state["config"]
 
 
@@ -137,39 +137,29 @@ def step_given_llm_fails_for_first_chunk(state: dict) -> None:
 
 # Given: configuration
 
-@given(parsers.re(r"a configuration with domains \[(?P<domains>[\w, ]+)\]"))
-def step_given_configuration_with_domains(state: dict, domains: str) -> None:
-    config_for(state).domains = split_names(domains)
+@given(
+    parsers.re(
+        rf'a configuration with the domain {quoted("domain")} described as {quoted("description")}'
+    )
+)
+def step_given_configuration_with_domain(state: dict, domain: str, description: str) -> None:
+    config_for(state).domains = {domain: description}
 
 
-@given(parsers.re(r"allowed_classes \[(?P<classes>[\w, ]+)\]"))
-def step_given_allowed_classes(state: dict, classes: str) -> None:
-    config_for(state).allowed_classes = split_names(classes)
+@given(parsers.re(r'allowed_classes describing (?P<names>.+)$'))
+def step_given_allowed_classes_describing(state: dict, names: str) -> None:
+    config_for(state).allowed_classes = described(names)
 
 
-@given(parsers.re(r"allowed_relations \[(?P<relations>[\w, ]+)\]"))
-def step_given_allowed_relations(state: dict, relations: str) -> None:
-    config_for(state).allowed_relations = split_names(relations)
+@given(parsers.re(r'allowed_relations describing (?P<names>.+)$'))
+def step_given_allowed_relations_describing(state: dict, names: str) -> None:
+    config_for(state).allowed_relations = described(names)
 
 
 @given("empty allowed_classes and allowed_relations")
 def step_given_empty_allow_lists(state: dict) -> None:
-    config = config_for(state)
-    config.allowed_classes = []
-    config.allowed_relations = []
-
-
-@given("a configuration with no domains and empty allow-lists")
-def step_given_configuration_with_nothing_scoped(state: dict) -> None:
-    config = config_for(state)
-    config.domains = []
-    config.allowed_classes = []
-    config.allowed_relations = []
-
-
-@given(parsers.re(rf'the domain {quoted("domain")} is described as {quoted("description")}'))
-def step_given_domain_description(state: dict, domain: str, description: str) -> None:
-    config_for(state).domain_descriptions[domain] = description
+    config_for(state).allowed_classes = {}
+    config_for(state).allowed_relations = {}
 
 
 @given(parsers.re(r"a configuration with batch_size (?P<size>\d+)"))
@@ -204,8 +194,17 @@ def step_when_extraction_is_performed_without_a_target(state: dict) -> None:
 # Then: candidates
 
 @then(parsers.re(r"the result contains the class candidates (?P<names>[\w, ]+?)\s*$"))
+def step_then_result_contains_classes(state: dict, names: str) -> None:
+    found = class_names(state)
+    for name in split_names(names):
+        assert name in found, f"{name} missing from {found}"
+
+
 @then(parsers.re(r"the result contains the relation candidates (?P<names>[\w, ]+?)\s*$"))
-# (existing steps remain unchanged)
+def step_then_result_contains_relations(state: dict, names: str) -> None:
+    found = relation_names(state)
+    for name in split_names(names):
+        assert name in found, f"{name} missing from {found}"
 
 
 @then('every candidate carries a "source_documents" reference with the chunk identifier')
@@ -250,8 +249,9 @@ def step_then_prompt_states_concept_limit(state: dict, limit: str) -> None:
 )
 def step_then_prompt_lists_domains_and_classes(state: dict, names: str) -> None:
     prompt = only_prompt(state)
-    for domain in config_for(state).domains:
+    for domain, description in config_for(state).domains.items():
         assert domain in prompt, f"{domain} missing from the prompt"
+        assert description in prompt, f"description of {domain} missing from the prompt"
     for name in split_names(names):
         assert name in prompt, f"{name} missing from the prompt"
 
@@ -266,14 +266,10 @@ def step_then_prompt_forbids_new_concepts(state: dict) -> None:
     assert CONSTRAINED_MARKER in only_prompt(state)
 
 
-@then(
-    parsers.re(
-        r"the LLM prompt contains the domain name and its description"
-    )
-)
+@then("the LLM prompt contains the domain name and its description")
 def step_then_prompt_contains_domain_description(state: dict) -> None:
     prompt = only_prompt(state)
-    for domain, description in config_for(state).domain_descriptions.items():
+    for domain, description in config_for(state).domains.items():
         assert domain in prompt, f"{domain} missing from the prompt"
         assert description in prompt, f"description of {domain} missing from the prompt"
 
@@ -313,11 +309,6 @@ def step_then_llm_returns_exact_concepts(state: dict, classes: str, relations: s
 @then(parsers.re(r"the LLM returns only \w+ concepts such as (?P<name>\w+)"))
 def step_then_llm_returns_domain_concepts(state: dict, name: str) -> None:
     assert name in class_names(state), f"{name} missing from the result"
-
-
-@then("the LLM returns the concepts it judged significant")
-def step_then_llm_returns_its_own_choice(state: dict) -> None:
-    assert state["candidates"], "the LLM chose nothing"
 
 
 @then(parsers.re(r"the LLM is called exactly (?P<count>\d+) times \(batches of [\d, ]+\)"))

@@ -10,26 +10,36 @@ def test_loading_a_full_configuration():
     pass
 
 
-@scenario("config-loading.feature", "Domains carry descriptions")
-def test_domains_carry_descriptions():
+@scenario("config-loading.feature", "An empty domains mapping is rejected")
+def test_an_empty_domains_mapping_is_rejected():
     pass
 
 
-@scenario("config-loading.feature", "Default values for a minimal configuration")
-def test_default_values_for_a_minimal_configuration():
+@scenario("config-loading.feature", "Every domain must carry a description")
+def test_every_domain_must_carry_a_description():
     pass
 
 
-@scenario("config-loading.feature", "Rejecting an invalid configuration")
-def test_rejecting_an_invalid_configuration():
+@scenario("config-loading.feature", "Empty allow-lists are valid")
+def test_empty_allow_lists_are_valid():
     pass
 
 
-@scenario("config-loading.feature", "API key from environment variable")
-def test_api_key_from_environment_variable():
+@scenario("config-loading.feature", "A class on an allow-list must carry a description")
+def test_a_class_on_an_allow_list_must_carry_a_description():
     pass
 
 
-@scenario("config-loading.feature", "Missing API key")
-def test_missing_api_key():
+@scenario("config-loading.feature", "A relation on an allow-list must carry a description")
+def test_a_relation_on_an_allow_list_must_carry_a_description():
+    pass
+
+
+@scenario("config-loading.feature", "An invalid field value is rejected")
+def test_an_invalid_field_value_is_rejected():
+    pass
+
+
+@scenario("config-loading.feature", "A missing required field is rejected")
+def test_a_missing_required_field_is_rejected():
     pass

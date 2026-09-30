@@ -4,9 +4,8 @@ from pathlib import Path
 
 from pytest_bdd import given, parsers, then, when
 
-from features.steps.support import log_events, log_lines, quoted, word
+from features.steps.support import log_events, log_lines, quoted, valid_config, word
 from onto.chunking import chunk_document
-from onto.config import BuilderConfig
 from onto.ingestion import Document, compute_fingerprint
 from onto.provenance import ProvenanceLog, SourceRef
 
@@ -50,7 +49,7 @@ def latest_event(state: dict) -> dict:
 def document_built_from(text: str, path: str) -> SourceRef:
     """Chunk a document for real, so the log carries a real chunk identifier."""
     document = Document(path=Path(path), text=text, fingerprint=compute_fingerprint(text))
-    chunk = chunk_document(document, BuilderConfig())[0]
+    chunk = chunk_document(document, valid_config())[0]
     return SourceRef(path=chunk.source_path, chunk_id=chunk.chunk_id)
 
 

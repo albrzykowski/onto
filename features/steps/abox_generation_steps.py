@@ -6,11 +6,10 @@ from linkml.validator import Validator
 from linkml.validator.plugins import JsonschemaValidationPlugin
 from pytest_bdd import given, parsers, then, when
 
-from features.steps.support import FakeLLM, event_names, quoted, word
+from features.steps.support import FakeLLM, event_names, quoted, valid_config, word
 from features.steps.tbox_generation_steps import extract_from
 from features.steps.tbox_generation_steps import generate as generate_tbox
 from onto.chunking import Chunk, chunk_document
-from onto.config import BuilderConfig
 from onto.ingestion import Document, compute_fingerprint
 from onto.instance_gen import INSTANCES_FILE_NAME, generate_abox
 from onto.provenance import ProvenanceLog
@@ -26,7 +25,7 @@ def make_chunk() -> Chunk:
         text=CHUNK_TEXT,
         fingerprint=compute_fingerprint(CHUNK_TEXT),
     )
-    return chunk_document(document, BuilderConfig())[0]
+    return chunk_document(document, valid_config())[0]
 
 
 def instance_reply(name: str, klass: str, slots: dict[str, str]) -> str:
@@ -50,7 +49,7 @@ def client_for(state: dict) -> FakeLLM:
 
 
 def build(state: dict, provenance_path: Path) -> None:
-    config = state.get("config") or BuilderConfig()
+    config = state.get("config") or valid_config()
     state["instances_path"] = generate_abox(
         [make_chunk()],
         config,

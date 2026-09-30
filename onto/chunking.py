@@ -6,13 +6,7 @@ from pydantic import BaseModel
 from onto.config import BuilderConfig
 from onto.ingestion import Document
 
-_FIXED = "fixed"
-
 TOKEN_PATTERN = re.compile(r"\S+")
-
-
-class ChunkError(Exception):
-    """Raised when a document cannot be split into chunks."""
 
 
 class Chunk(BaseModel):
@@ -39,24 +33,18 @@ def count_tokens(text: str) -> int:
 
 
 def chunk_document(document: Document, config: BuilderConfig) -> list[Chunk]:
-    """Split a document into overlapping, size-limited chunks."""
-    if config.chunking_strategy != _FIXED:
-        raise ChunkError(f"unsupported chunking strategy: {config.chunking_strategy!r}")
+    """Split a document into overlapping, size-limited chunks.
 
+    The strategy and the window bounds are validated when the configuration is loaded, so
+    a BuilderConfig reaching this point is already known to be splittable.
+    """
     size = config.max_chunk_tokens
-    overlap = config.overlap_tokens
-    if size < 1:
-        raise ChunkError(f"max_chunk_tokens must be at least 1, got {size}")
-    if not 0 <= overlap < size:
-        raise ChunkError(
-            f"overlap_tokens must be between 0 and {size - 1}, got {overlap}"
-        )
+    step = size - config.overlap_tokens
 
     tokens = tokenize(document.text)
     if not tokens:
         return []
 
-    step = size - overlap
     chunks: list[Chunk] = []
     start = 0
     while True:

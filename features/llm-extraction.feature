@@ -20,9 +20,9 @@ Feature: Extracting concepts with the LLM
     And every relation candidate has a snake_case name
 
   Scenario: The prompt constrains the LLM to allowed classes and relations
-    Given a configuration with domains [automotive]
-    And allowed_classes [Vehicle, Engine]
-    And allowed_relations [has_engine]
+    Given a configuration with the domain "automotive" described as "Passenger and commercial vehicles"
+    And allowed_classes describing Vehicle as "A motorized road vehicle" and Engine as "A machine converting fuel into motion"
+    And allowed_relations describing has_engine as "Links a vehicle to its engine"
     When extraction is performed
     Then the LLM prompt lists the domains and the predefined classes Vehicle and Engine
     And the LLM prompt lists the predefined relation has_engine
@@ -30,19 +30,12 @@ Feature: Extracting concepts with the LLM
     And the LLM returns exactly the classes Vehicle and Engine and the relation has_engine
 
   Scenario: The prompt scopes the LLM to domains without allow-lists
-    Given a configuration with domains [automotive]
+    Given a configuration with the domain "automotive" described as "Passenger and commercial vehicles"
     And empty allowed_classes and allowed_relations
-    And the domain "automotive" is described as "Passenger and commercial vehicles and their components"
     When extraction is performed
     Then the LLM prompt contains the domain name and its description
     And the prompt instructs the LLM to extract concepts relevant to the automotive domain
     And the LLM returns only automotive concepts such as Vehicle
-
-  Scenario: The LLM decides freely when nothing is scoped
-    Given a configuration with no domains and empty allow-lists
-    When extraction is performed
-    Then the LLM prompt does not constrain the set of concepts
-    And the LLM returns the concepts it judged significant
 
   Scenario: Batching LLM calls
     Given a configuration with batch_size 2

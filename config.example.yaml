@@ -1,0 +1,45 @@
+# Auto Ontology Builder — example configuration
+#
+# Copy this file to `config.yaml` and fill in your own values. All fields are
+# required and nothing is read from environment variables.
+
+# Domain map: subject matter -> description. At least one domain is required.
+domains:
+  automotive: "Passenger and commercial vehicles and their components"
+
+# Allowed classes map: class name -> description. Leave as {} to let the model
+# pick classes within the domains. If you list a class, you must give it a
+# description.
+allowed_classes: {}
+
+# Allowed relations map: relation name -> description. Same rules as
+# allowed_classes.
+allowed_relations: {}
+
+# Build mode: "override" (start from scratch) or "update" (merge with existing
+# ontology and use embeddings for deduplication).
+mode: override
+
+# Models: the part before the slash is the provider (e.g., "mistral", "openai").
+# Both are required; they may point to different providers if you use different
+# keys.
+model: "mistral/mistral-large-latest"
+embedding_model: "mistral/mistral-embed"
+
+# API keys: passed directly to the adapters (no environment variables). If both
+# models use the same provider, you can use the same key for both.
+api_key: "your_api_key"
+embedding_api_key: "your_api_key"
+
+# Document chunking (fixed strategy only).
+chunking_strategy: fixed
+max_chunk_tokens: 2000
+# Overlap between adjacent chunks; must be < max_chunk_tokens.
+overlap_tokens: 200
+
+# Extraction batching.
+batch_size: 4
+max_concepts_per_batch: 5
+
+# Deduplication threshold for update mode (cosine similarity in [0,1]).
+similarity_threshold: 0.85
