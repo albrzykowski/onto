@@ -4,6 +4,7 @@ version = "0.1.0"
 description = "Build and update LinkML ontologies from documents, with an LLM"
 requires-python = ">=3.11"
 dependencies = [
+  "litellm>=1.103",
   "pdfminer.six",
   "pydantic>=2",
   "python-docx",

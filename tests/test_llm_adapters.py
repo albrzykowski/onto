@@ -8,7 +8,6 @@ client that records the request instead of calling a real API.
 from types import SimpleNamespace
 
 import httpx
-import httpx2
 import openai
 import pytest
 from mistralai.models import SDKError
@@ -58,7 +57,7 @@ class FakeClient:
 
 
 def openai_error(message: str) -> Exception:
-    return openai.APIError(message, httpx2.Request("POST", "https://api.openai.com"), body=None)
+    return openai.APIError(message, httpx.Request("POST", "https://api.openai.com"), body=None)
 
 
 def mistral_error(message: str) -> Exception:

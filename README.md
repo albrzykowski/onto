@@ -28,6 +28,22 @@ pip install -e .[mistral]   # or .[openai]
 
 Only the provider you name in the configuration has to be installed.
 
+#### What the provider layers cost
+
+Both provider adapters are being migrated to [LiteLLM](https://github.com/BerriAI/litellm),
+which is what will let one adapter answer for every provider. It is the heaviest dependency
+this project takes, and on Linux it needs a native library:
+
+```bash
+# NixOS only: tokenizers links against the C++ runtime, which is not on the default path
+export LD_LIBRARY_PATH=/nix/store/<hash>-gcc-*-lib/lib:$LD_LIBRARY_PATH
+```
+
+Measured on `litellm` 1.103.1: 134 MB in `site-packages`, 61 installed packages, and roughly
+15 seconds for the first `import litellm`. The library itself is 212 KB. Until that migration
+lands, the adapters still speak to `mistralai` and `openai` directly and none of this applies
+to them.
+
 ### 3. Configure the model, the provider and the API key
 
 Create a `config.yaml` in the repository root:
