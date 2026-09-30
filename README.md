@@ -44,13 +44,13 @@ Measured on `litellm` 1.103.1: 134 MB in `site-packages`, 61 installed packages,
 dependency too, not an extra: LiteLLM answers with OpenAI-shaped responses, so its exceptions
 derive from `openai.APIError` and the adapters catch that class.
 
-### 3. Configure the model, the provider and the API key
+### 3. Configure the models and the API key
 
 Create a `config.yaml` in the repository root:
 
 ```yaml
-provider: mistral
-model: mistral-large-latest
+model: mistral/mistral-large-latest
+embedding_model: mistral/mistral-embed
 chunking_strategy: fixed
 max_chunk_tokens: 2000
 overlap_tokens: 200
@@ -60,8 +60,20 @@ similarity_threshold: 0.85
 api_key: "your_api_key"
 ```
 
-`provider` is `mistral` or `openai`: it is what decides which adapter answers the prompts
-and, in update mode, which one supplies the embeddings.
+Each model name carries its provider: the part before the slash decides who answers. This is
+the only place a provider is named, which is what keeps a build from sending its prompts to
+one account and its embeddings to another.
+
+`model` is the model that answers the prompts, `embedding_model` the one that turns concept
+names into vectors for update mode. They are separate because a provider embeds with a
+different model than it answers with: `mistral/mistral-large-latest` and `mistral/mistral-embed`
+are both Mistral, and neither would work in the other's place. To build with OpenAI, name
+OpenAI in both:
+
+```yaml
+model: openai/gpt-4o
+embedding_model: openai/text-embedding-3-small
+```
 
 The `api_key` field is what the adapter is given, so one key is all a build needs. Left out,
 the key is read from the `ANTHROPIC_API_KEY` environment variable. From the command line the
@@ -100,7 +112,7 @@ from onto.llm_litellm import LiteLLMLLM
 
 config = load_config("config.yaml")
 
-llm = LiteLLMLLM(api_key=config.api_key, provider=config.provider)
+llm = LiteLLMLLM(api_key=config.api_key)
 build(input_dir=Path("corpus"), output_dir=Path("ontology"), config=config, llm=llm)
 ```
 
@@ -145,22 +157,20 @@ type is put to the model to resolve. The provenance log of the earlier build is 
 to, not replaced, and a run that finds nothing new writes nothing at all.
 
 Telling a repeated concept from a new one is done with embeddings, so update mode is given
-an embedder. The one that ships takes them from the provider `provider` names, which means
+an embedder. The one that ships uses the `embedding_model` from the configuration, which means
 the build needs nothing beyond the key it already has:
 
 ```python
 from onto.builder import build
-from onto.embeddings import EMBEDDING_MODELS, LiteLLMEmbedder
+from onto.embeddings import LiteLLMEmbedder
 from onto.llm_litellm import LiteLLMLLM
 
 build(
     input_dir=Path("corpus"),
     output_dir=Path("ontology"),
     config=config,
-    llm=LiteLLMLLM(api_key=config.api_key, provider=config.provider),
-    embedder=LiteLLMEmbedder(
-        api_key=config.api_key, model=EMBEDDING_MODELS[config.provider]
-    ),
+    llm=LiteLLMLLM(api_key=config.api_key),
+    embedder=LiteLLMEmbedder(api_key=config.api_key, model=config.embedding_model),
 )
 ```
 

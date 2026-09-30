@@ -15,8 +15,6 @@ class MissingAPIKeyError(Exception):
 
 VALID_MODES = ("override", "update")
 
-VALID_PROVIDERS = ("mistral", "openai")
-
 
 class BuilderConfig(BaseModel):
     domains: list[str] = Field(default_factory=list)
@@ -24,13 +22,13 @@ class BuilderConfig(BaseModel):
     allowed_relations: list[str] = Field(default_factory=list)
     domain_descriptions: dict[str, str] = Field(default_factory=dict)
     mode: str = "override"
-    provider: str = "mistral"
     chunking_strategy: str = "fixed"
     max_chunk_tokens: int = 2000
     overlap_tokens: int = 200
     batch_size: int = Field(default=1, ge=1)
     max_concepts_per_batch: int = Field(default=5, ge=1)
-    model: str = "mistral-large-latest"
+    model: str = "mistral/mistral-large-latest"
+    embedding_model: str = "mistral/mistral-embed"
     similarity_threshold: float = 0.85
     api_key: str | None = Field(default=None, validate_default=True)
 
@@ -40,15 +38,6 @@ class BuilderConfig(BaseModel):
         if value not in VALID_MODES:
             raise ConfigValidationError(
                 f"Invalid mode: {value!r}. Expected one of {list(VALID_MODES)}."
-            )
-        return value
-
-    @field_validator("provider")
-    @classmethod
-    def validate_provider(cls, value: str) -> str:
-        if value not in VALID_PROVIDERS:
-            raise ConfigValidationError(
-                f"Invalid provider: {value!r}. Expected one of {list(VALID_PROVIDERS)}."
             )
         return value
 

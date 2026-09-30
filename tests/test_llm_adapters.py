@@ -13,7 +13,7 @@ import pytest
 from onto.llm import LLM, CompletionRequest, LLMError
 from onto.llm_litellm import LiteLLMLLM
 
-REQUEST = CompletionRequest(model="test-model", prompt="name the concepts", max_tokens=512)
+REQUEST = CompletionRequest(model="mistral/test-model", prompt="name the concepts", max_tokens=512)
 REPLY = '{"classes": [], "relations": []}'
 
 SENT = {
@@ -47,10 +47,25 @@ def install(monkeypatch: pytest.MonkeyPatch, fake: FakeCompletion) -> None:
 def test_the_request_reaches_the_provider(monkeypatch: pytest.MonkeyPatch) -> None:
     fake = FakeCompletion()
     install(monkeypatch, fake)
-    llm: LLM = LiteLLMLLM(api_key="test-key", provider="mistral")
+    llm: LLM = LiteLLMLLM(api_key="test-key")
 
     assert llm.complete(REQUEST) == REPLY
     assert fake.requests == [SENT]
+
+
+def test_the_model_name_reaches_the_provider_unprefixed_twice(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The provider is part of the model name and nowhere else, so the adapter must send that
+    name as it stands. Prefixing it again would send the request to a provider named after
+    itself, which LiteLLM cannot resolve."""
+    fake = FakeCompletion()
+    install(monkeypatch, fake)
+    llm: LLM = LiteLLMLLM(api_key="test-key")
+
+    llm.complete(REQUEST)
+
+    assert fake.requests[0]["model"] == "mistral/test-model"
 
 
 def test_a_provider_failure_becomes_an_llm_error(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -58,7 +73,7 @@ def test_a_provider_failure_becomes_an_llm_error(monkeypatch: pytest.MonkeyPatch
         message="rate limited", llm_provider="mistral", model="mistral/test-model"
     )
     install(monkeypatch, FakeCompletion(error=failure))
-    llm: LLM = LiteLLMLLM(api_key="test-key", provider="mistral")
+    llm: LLM = LiteLLMLLM(api_key="test-key")
 
     with pytest.raises(LLMError, match="rate limited"):
         llm.complete(REQUEST)
@@ -71,7 +86,7 @@ def test_a_wrong_api_key_becomes_an_llm_error(monkeypatch: pytest.MonkeyPatch) -
         message="invalid api key", llm_provider="mistral", model="mistral/test-model"
     )
     install(monkeypatch, FakeCompletion(error=wrong_key))
-    llm: LLM = LiteLLMLLM(api_key="test-key", provider="mistral")
+    llm: LLM = LiteLLMLLM(api_key="test-key")
 
     with pytest.raises(LLMError, match="invalid api key"):
         llm.complete(REQUEST)
@@ -79,6 +94,6 @@ def test_a_wrong_api_key_becomes_an_llm_error(monkeypatch: pytest.MonkeyPatch) -
 
 def test_a_reply_without_content_is_an_empty_string(monkeypatch: pytest.MonkeyPatch) -> None:
     install(monkeypatch, FakeCompletion(content=None))
-    llm: LLM = LiteLLMLLM(api_key="test-key", provider="mistral")
+    llm: LLM = LiteLLMLLM(api_key="test-key")
 
     assert llm.complete(REQUEST) == ""

@@ -28,7 +28,7 @@ UPDATE = "update"
 COMMAND_MODES = {BUILD: "override", UPDATE: "update"}
 
 EPILOG = """\
-The configuration file names the provider, the model and the key the build runs with:
+The configuration file names the models and the key the build runs with:
 
   onto build --config config.yaml --input corpus/ --output ontology/
   onto update --config config.yaml --input more/ --output ontology/
@@ -40,15 +40,15 @@ def llm_for(config: BuilderConfig) -> LLM:
     naming one provider must not fail because the SDK of the other one is absent."""
     from onto.llm_litellm import LiteLLMLLM
 
-    return LiteLLMLLM(api_key=config.api_key, provider=config.provider)
+    return LiteLLMLLM(api_key=config.api_key)
 
 
 def embedder_for(config: BuilderConfig) -> Embedder:
     """Update mode needs embeddings, and it takes them from the provider that answers the
     prompts, so a build needs one key and one account rather than two."""
-    from onto.embeddings import EMBEDDING_MODELS, LiteLLMEmbedder
+    from onto.embeddings import LiteLLMEmbedder
 
-    return LiteLLMEmbedder(api_key=config.api_key, model=EMBEDDING_MODELS[config.provider])
+    return LiteLLMEmbedder(api_key=config.api_key, model=config.embedding_model)
 
 
 def _add_arguments(command: argparse.ArgumentParser) -> None:

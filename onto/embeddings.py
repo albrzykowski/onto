@@ -1,10 +1,9 @@
 """Adapter for the provider-neutral `onto.dedup.Embedder` contract.
 
 Like the chat adapter, this one serves every provider through LiteLLM: the provider travels in
-the model name, and the embeddings model is not the chat model, so both arrive as one name.
-
-The embedding model differs per provider, so `EMBEDDING_MODELS` is where a provider names the
-one that serves it.
+the model name. The embeddings model is not the chat model — Mistral embeds with `mistral-embed`
+while it answers prompts with `mistral-large-latest` — so the name names both, and the
+configuration carries it as `embedding_model`.
 """
 
 import litellm
@@ -12,18 +11,11 @@ import openai
 
 from onto.dedup import EmbeddingError
 
-EMBEDDING_MODELS = {
-    "mistral": "mistral/mistral-embed",
-    "openai": "openai/text-embedding-3-small",
-}
-
 
 class LiteLLMEmbedder:
     """Turns concept names into vectors with the provider named by `model`."""
 
-    def __init__(
-        self, api_key: str | None = None, model: str = EMBEDDING_MODELS["mistral"]
-    ) -> None:
+    def __init__(self, api_key: str | None = None, model: str = "mistral/mistral-embed") -> None:
         self._api_key = api_key
         self._model = model
 
