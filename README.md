@@ -30,7 +30,7 @@ One adapter answers for every provider, so there is no provider package left to 
 
 #### What the provider layers cost
 
-The chat adapter runs on [LiteLLM](https://github.com/BerriAI/litellm), which is what lets one
+Both adapters run on [LiteLLM](https://github.com/BerriAI/litellm), which is what lets one
 adapter answer for every provider. It is the heaviest dependency this project takes, and on
 Linux it needs a native library:
 
@@ -39,10 +39,14 @@ Linux it needs a native library:
 export LD_LIBRARY_PATH=/nix/store/<hash>-gcc-*-lib/lib:$LD_LIBRARY_PATH
 ```
 
+Every command below needs it on NixOS — not just `pip install`, but anything that imports
+LiteLLM, tests included. Elsewhere it is found on its own.
+
 Measured on `litellm` 1.103.1: 134 MB in `site-packages`, 61 installed packages, and roughly
 15 seconds for the first `import litellm`. The library itself is 212 KB. `openai` is a direct
 dependency too, not an extra: LiteLLM answers with OpenAI-shaped responses, so its exceptions
-derive from `openai.APIError` and the adapters catch that class.
+derive from `openai.APIError`, and both adapters catch that class rather than
+`litellm.APIError`, which is not the base of LiteLLM's errors and would catch nothing.
 
 ### 3. Configure the models and the API key
 
@@ -135,9 +139,9 @@ llm = LiteLLMLLM(api_key=config.api_key)
 build(input_dir=Path("corpus"), output_dir=Path("ontology"), config=config, llm=llm)
 ```
 
-Pass `api_key=config.api_key` to the adapter. The SDK does not pick the key up from
-the environment on its own, so leaving it out sends a request with no credentials and
-Mistral answers `Invalid API Key` — the same as a key that really is wrong.
+Pass `api_key=config.api_key` to the adapter. LiteLLM will not look the key up from the
+environment for a request that names a provider, so leaving it out sends a request with no
+credentials and the provider answers `Invalid API Key` — the same as a key that really is wrong.
 
 `build` runs the whole pipeline — ingestion, chunking, extraction, T-Box, A-Box — in the
 mode `config.mode` names. The steps are also available one by one, if you want to inspect
@@ -199,6 +203,14 @@ build(
 Any object with an `embed` method will do — the `Embedder` protocol in `onto.dedup` is all
 `build` asks for, so an embedder that runs locally takes its place without anything else
 changing. The command line needs none of this: `onto update` builds the embedder itself.
+
+From Python it is required, not optional. `build` refuses `mode: update` without one, since
+telling a repeated concept from a new one is what it is for:
+
+```
+BuildError: update mode needs an embedder: it cannot tell a repeated concept from a new one
+without one
+```
 
 ### 7. Inspect the output
 
