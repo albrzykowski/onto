@@ -20,13 +20,13 @@ source .venv/bin/activate  # Linux/macOS
 .\.venv\Scripts\activate   # Windows
 ```
 
-### 2. Install the library and the provider
+### 2. Install the library
 
 ```bash
-pip install -e .[mistral]   # or .[openai]
+pip install -e .
 ```
 
-Only the provider you name in the configuration has to be installed.
+One adapter answers for every provider, so there is no provider package left to install.
 
 #### What the provider layers cost
 
@@ -40,8 +40,9 @@ export LD_LIBRARY_PATH=/nix/store/<hash>-gcc-*-lib/lib:$LD_LIBRARY_PATH
 ```
 
 Measured on `litellm` 1.103.1: 134 MB in `site-packages`, 61 installed packages, and roughly
-15 seconds for the first `import litellm`. The library itself is 212 KB. The embeddings still
-speak to `mistralai` and `openai` directly, and none of this applies to them yet.
+15 seconds for the first `import litellm`. The library itself is 212 KB. `openai` is a direct
+dependency too, not an extra: LiteLLM answers with OpenAI-shaped responses, so its exceptions
+derive from `openai.APIError` and the adapters catch that class.
 
 ### 3. Configure the model, the provider and the API key
 
@@ -149,7 +150,7 @@ the build needs nothing beyond the key it already has:
 
 ```python
 from onto.builder import build
-from onto.embeddings import MistralEmbedder
+from onto.embeddings import EMBEDDING_MODELS, LiteLLMEmbedder
 from onto.llm_litellm import LiteLLMLLM
 
 build(
@@ -157,7 +158,9 @@ build(
     output_dir=Path("ontology"),
     config=config,
     llm=LiteLLMLLM(api_key=config.api_key, provider=config.provider),
-    embedder=MistralEmbedder(),
+    embedder=LiteLLMEmbedder(
+        api_key=config.api_key, model=EMBEDDING_MODELS[config.provider]
+    ),
 )
 ```
 

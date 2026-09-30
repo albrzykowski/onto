@@ -46,13 +46,9 @@ def llm_for(config: BuilderConfig) -> LLM:
 def embedder_for(config: BuilderConfig) -> Embedder:
     """Update mode needs embeddings, and it takes them from the provider that answers the
     prompts, so a build needs one key and one account rather than two."""
-    if config.provider == "mistral":
-        from onto.embeddings import MistralEmbedder
+    from onto.embeddings import EMBEDDING_MODELS, LiteLLMEmbedder
 
-        return MistralEmbedder(api_key=config.api_key)
-    from onto.embeddings import OpenAIEmbedder
-
-    return OpenAIEmbedder(api_key=config.api_key)
+    return LiteLLMEmbedder(api_key=config.api_key, model=EMBEDDING_MODELS[config.provider])
 
 
 def _add_arguments(command: argparse.ArgumentParser) -> None:

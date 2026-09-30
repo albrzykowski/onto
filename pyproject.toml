@@ -5,17 +5,12 @@ description = "Build and update LinkML ontologies from documents, with an LLM"
 requires-python = ">=3.11"
 dependencies = [
   "litellm>=1.103",
+  "openai>=2.20,<3",
   "pdfminer.six",
   "pydantic>=2",
   "python-docx",
   "PyYAML",
 ]
-
-# the provider SDKs are what a build calls, and which of them is needed is named by
-# `provider` in the configuration, so none of them is required to install the library
-[project.optional-dependencies]
-mistral = ["mistralai>=1.12,<2"]
-openai = ["openai>=1"]
 
 [project.scripts]
 onto = "onto.cli:main"
@@ -28,13 +23,13 @@ build-backend = "setuptools.build_meta"
 packages = ["onto"]
 
 [dependency-groups]
+# `openai` is a runtime dependency rather than an extra: LiteLLM answers with OpenAI-shaped
+# responses, so its exceptions derive from `openai.APIError` and the adapters catch that class
 dev = [
   "linkml>=1.8",
   "linkml-runtime>=1.8",
   "mypy>=1.11",
   "ruff>=0.6",
-  "mistralai>=1.12,<2",
-  "openai>=1",
   "pytest>=8",
   "pytest-bdd>=8",
 ]
