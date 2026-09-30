@@ -1,6 +1,11 @@
 # AGENTS.md — Instructions for the coding agent
 
-This file defines the working rules for the agent building the **Auto Ontology Builder** project (Python, LinkML, Anthropic LLM API). The agent works in an **ATDD (Acceptance Test-Driven Development)** cycle.
+This file defines the working rules for the agent building the **Auto Ontology Builder** project (Python, LinkML, LiteLLM). The agent works in an **ATDD (Acceptance Test-Driven Development)** cycle.
+
+Any provider is reached through LiteLLM, and the provider is named by the model rather than by
+a key of its own. The one environment variable this project reads is `ANTHROPIC_API_KEY`, and
+its name is a historical accident: it holds the key for whichever provider `model` names, and an
+Anthropic key is not what `mistral/mistral-embed` will accept.
 
 ## 🔄 Working cycle (ATDD) — mandatory
 
@@ -45,9 +50,8 @@ onto/
 ├── ingestion.py       # txt/md/pdf/docx loading, fingerprinting
 ├── chunking.py        # fixed-size chunking
 ├── llm.py             # provider-neutral LLM contract (CompletionRequest, LLM, LLMError)
-├── llm_openai.py      # OpenAI adapter for the LLM contract
-├── llm_mistral.py     # Mistral adapter for the LLM contract
-├── embeddings.py      # embeddings adapters (Mistral, OpenAI) for the Embedder contract
+├── llm_litellm.py     # the one LLM adapter — LiteLLM, provider named by the model
+├── embeddings.py      # the one embedder — LiteLLM, same routing
 ├── extraction.py      # LLM calls, prompts, batching
 ├── schema_gen.py      # T-Box — LinkML schema generation
 ├── instance_gen.py    # A-Box — LinkML instance generation
@@ -62,6 +66,12 @@ tests/
 ├── test_llm_adapters.py       # unit tests — adapters have no Gherkin contract
 └── test_embedding_adapters.py  # unit tests — the same, for the Embedder contract
 ```
+
+Both adapters are one class each. There is no `llm_openai.py`, no `llm_mistral.py` and no
+per-provider embedder, and a model name carries its provider (`mistral/mistral-large-latest`).
+`onto/config.py` has no `provider` field, no `VALID_PROVIDERS` and no provider validator —
+nothing in `onto/` names a provider except the string in the configuration. Do not reintroduce
+any of them; `TODO.md` in the repository root records the scenarios this cannot be tested by.
 
 ## 🎯 Engineering principles
 
@@ -154,7 +164,12 @@ mypy onto features tests conftest.py
 Run **all three** after every change — a step that leaves the suite green but
 introduces a lint or type error is not done.
 
-Tests **never** call a real LLM API. Replace the model with a test double (`unittest.mock` / `pytest-mock`) in the step definitions and pass a fake client to the adapters — the business scenarios in `.feature` files speak only about what the language model "returns"/"is instructed to return", never about test doubles. Embeddings in tests: a fake/deterministic implementation (no model downloads in CI).
+Tests **never** call a real LLM API. Replace the model with a test double (`unittest.mock` / `pytest-mock`) in the step definitions — the business scenarios in `.feature` files speak only about what the language model "returns"/"is instructed to return", never about test doubles. Embeddings in tests: a fake/deterministic implementation (no model downloads in CI).
+
+The LiteLLM adapters have no client object to inject: `litellm.completion` and `litellm.embedding` are module-level functions, so `monkeypatch.setattr(litellm, "completion", fake)` is the seam. Two traps that the unit tests pin, and that a well-meaning refactor will otherwise reintroduce:
+
+- Catch `openai.OpenAIError`, not `litellm.APIError`. The latter is not the base of LiteLLM's failures and derives from none of them.
+- Assert that the `api_key` reaches the call. LiteLLM will not look one up from the environment for a request that names a provider, so an adapter that forgets to pass it leaves without credentials and is answered `Invalid API Key` — the same answer as a wrong key.
 
 **Note:** When defining steps for pytest-bdd, ensure that steps with the same text but different logic use unique function names or `target_fixture` to avoid conflicts.
 
@@ -163,7 +178,9 @@ Tests **never** call a real LLM API. Replace the model with a test double (`unit
 - Dependencies restricted to Apache-2.0 / MIT / MPL-2.0 licenses. **No BSD, no GPL/AGPL, no proprietary.** The CLI uses `argparse` from the standard library rather than typer, which is MIT but pulls in `click` (BSD-3-Clause) and `shellingham` (ISC).
 - **Exception — the schema linter.** `linkml` is Apache-2.0 and dev-only, but it requires `click` and `jinja2`, both BSD-3-Clause. It is kept because the T-Box scenarios validate the generated schema with it (`features/steps/tbox_generation_steps.py`), which no smaller dependency does. Nothing in `onto/` imports it: the exception covers the test toolchain alone, and drops out with the dev group.
 - **Exception — the LiteLLM adapter.** `litellm` is MIT, but installing it pulls `click` (BSD-3-Clause) and `Jinja2` (BSD-3-Clause) as runtime dependencies — the two packages this project avoided when it chose `argparse` over `typer`. It is accepted because one adapter then answers for every provider, and the model name carries its provider, so the per-provider modules and the `provider` key go away. Measured on `litellm` 1.103.1: 134 MB in `site-packages`, ~15 s for `import litellm`, 61 installed packages, and `tokenizers` needs `libstdc++.so.6`, which on NixOS means `LD_LIBRARY_PATH` pointing at `gcc-15.3.0-lib/lib`. Unlike the linter, this one is a runtime dependency of `onto/`, not of the test toolchain.
-- User configuration only via YAML + the `ANTHROPIC_API_KEY` environment variable (never hard-coded).
+- **The exceptions are not optional.** `litellm` requires `openai>=2.20,<3`, and `onto/` imports `openai` for `openai.OpenAIError` because LiteLLM's failures derive from it. Do not drop it back to an extra, and do not "simplify" either `except` clause to `litellm.APIError` — that class is not the base of LiteLLM's errors and catches nothing.
+- User configuration only via YAML + the `ANTHROPIC_API_KEY` environment variable (never hard-coded). The variable's name is historical: it is the fallback for `api_key`, and its value is a key for whichever provider the models name, not necessarily an Anthropic one.
+- Two keys, because a build may answer and embed with different providers: `api_key` for `model`, `embedding_api_key` for `embedding_model`, the latter falling back to the former. `embedding_model` defaults to `mistral/mistral-embed`, so naming only `model` changes only the chat provider and leaves the vectors going to Mistral — the README warns about this in the configuration section.
 - Every ontology change (class, slot, instance) **must** carry provenance: source document path, chunk id, **and the source text excerpt** it was derived from.
 - A single failing document (corrupted PDF, etc.) must not abort the build — log and skip it.
 - Commit after every green ATDD cycle: `feat: <feature-name>` or `refactor: <feature-name>`.
@@ -190,20 +207,22 @@ just been rotated. `a54c057` corrected the example, but nothing prevents the nex
 Proposed, not yet accepted as a scenario:
 
 - A scenario in `features/config-loading.feature` stating that a build from Python hands
-  `config.api_key` to the provider adapter, and an adapter that then sends
-  `Authorization: Bearer <config key>`.
-- The step reuses the fake client already used in `features/steps/support.py` and reads the
-  key off the adapter, so the assertion needs no network access.
+  `config.api_key` to the provider adapter, and that the adapter passes it to LiteLLM.
+- The step reads the key off the request `litellm.completion` receives, with `litellm`
+  patched, so the assertion needs no network access. `features/steps/support.py` holds the
+  `FakeLLM` the other steps use; a fake *client* no longer applies, because the adapter has
+  none to inject.
 - Done when `pytest features/ -k config_loading` passes, the four `cli.feature` scenarios
   still pass, and the README example is covered by the same wording the scenario pins.
 
 **The agent must not write this scenario.** The working cycle forbids editing `.feature`
 files; the author of the Gherkin adds it, then the agent runs the cycle as usual.
 
-Also worth pinning while that file is open: the OpenAI adapter and the Mistral adapter
-differ in whether the SDK reads the key from the environment (`OPENAI_API_KEY` is read,
-`MISTRAL_API_KEY` is silently ignored in `mistralai` 1.12.4). Neither provider may be
-relied on to pick the key up on its own.
+The same `config-loading.feature` file is the place for the two-key scenario, and that one is
+already drafted in `TODO.md` in the repository root. Worth pinning while it is open: LiteLLM
+gives an explicit `api_key` precedence over `OPENAI_API_KEY` in the environment (measured),
+which is why the configuration's key must reach the call — but neither provider may be relied
+on to pick it up on its own.
 
 ### ~~Keep the provider extras genuinely optional~~ — done by the LiteLLM migration
 
