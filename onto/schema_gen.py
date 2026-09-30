@@ -7,7 +7,7 @@ from pydantic import BaseModel, Field
 from onto.config import BuilderConfig
 from onto.dedup import Embedder, closest_of, verify_merge
 from onto.extraction import Candidate, CandidateKind
-from onto.llm import LLM, CompletionRequest
+from onto.llm import LLM, CompletionRequest, read_json
 from onto.provenance import ProvenanceLog, SourceRef
 
 logger = logging.getLogger(__name__)
@@ -165,7 +165,7 @@ def _plan(llm: LLM, class_names: list[str], slot_names: list[str], config: Build
             model=config.model, prompt=_prompt(class_names, slot_names), max_tokens=_MAX_TOKENS
         )
     )
-    return _Plan.model_validate_json(reply)
+    return _Plan.model_validate_json(read_json(reply))
 
 
 def _classes(
@@ -244,7 +244,7 @@ def _update_plan(
             max_tokens=_MAX_TOKENS,
         )
     )
-    return _UpdatePlan.model_validate_json(reply)
+    return _UpdatePlan.model_validate_json(read_json(reply))
 
 
 def _resolve_range(llm: LLM, config: BuilderConfig, slot: str, current: str, proposed: str) -> str:
@@ -260,7 +260,7 @@ def _resolve_range(llm: LLM, config: BuilderConfig, slot: str, current: str, pro
     reply = llm.complete(
         CompletionRequest(model=config.model, prompt=prompt, max_tokens=_MAX_TOKENS)
     )
-    return _Resolution.model_validate_json(reply).range
+    return _Resolution.model_validate_json(read_json(reply)).range
 
 
 def _duplicates(

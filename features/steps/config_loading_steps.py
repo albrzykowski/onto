@@ -158,3 +158,17 @@ def step_then_validation_error(state):
     assert isinstance(state["error"], Exception), (
         f"expected an exception, got {state['error']!r}"
     )
+
+
+@then("a ConfigValidationError is raised")
+def step_then_config_validation_error(state):
+    assert isinstance(state["error"], ConfigValidationError), (
+        f"expected ConfigValidationError, got {state['error']!r}"
+    )
+
+
+@then("a MissingAPIKeyError is raised")
+def step_then_missing_api_key_error(state):
+    assert isinstance(state["error"], MissingAPIKeyError), (
+        f"expected MissingAPIKeyError, got {state['error']!r}"
+    )

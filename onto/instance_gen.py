@@ -7,7 +7,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from onto.chunking import Chunk
 from onto.config import BuilderConfig
-from onto.llm import LLM, CompletionRequest
+from onto.llm import LLM, CompletionRequest, read_json
 from onto.provenance import ProvenanceLog, SourceRef
 
 logger = logging.getLogger(__name__)
@@ -25,11 +25,29 @@ Rules:
 - Name every entity the text states concretely, and skip what it merely mentions in passing.
 - Give each slot the name of the entity it points to, written exactly as the text writes it.
 - Use only the classes and slots listed below; invent nothing.
+- Every slot value is a single string naming the one entity it points to. A slot is never a \
+list, even when the text names several things for it; keep the most significant one.
 - Copy the excerpt verbatim from the source text; it is the only proof of where the \
 instance came from.
 
 Answer with a single JSON object and nothing else:
 {"instances": [{"name": ..., "class": ..., "slots": {...}, "excerpt": ...}]}"""
+
+
+def _output_contract(config: BuilderConfig) -> str:
+    """The rules that decide whether the reply can be read at all; see `onto.extraction`
+    for why a model asked for JSON will otherwise enumerate until it runs out of tokens."""
+    limit = config.max_concepts_per_batch
+    return "\n".join(
+        [
+            "Output contract, which is not negotiable:",
+            f"- At most {limit} instances. Choose the most significant; a shorter list is"
+            " better than a longer one. Stop and close the object once you reach the limit.",
+            '- Your entire reply is one JSON object: the first character is "{" and the last'
+            ' is "}". No prose before it, no prose after it.',
+            "- Do not wrap the object in a markdown code fence.",
+        ]
+    )
 
 
 class Instance(BaseModel):
@@ -75,10 +93,11 @@ def _listing(classes: dict[str, list[str]]) -> str:
     )
 
 
-def _prompt(classes: dict[str, list[str]], chunk: Chunk) -> str:
+def _prompt(classes: dict[str, list[str]], chunk: Chunk, config: BuilderConfig) -> str:
     sections = [
         _INSTRUCTIONS,
         f"Classes of the schema:\n{_listing(classes)}",
+        _output_contract(config),
         f"Source text:\n[{chunk.chunk_id}]\n{chunk.text}",
     ]
     return "\n\n".join(sections)
@@ -89,10 +108,10 @@ def _proposals(
 ) -> list[_Proposal]:
     reply = llm.complete(
         CompletionRequest(
-            model=config.model, prompt=_prompt(classes, chunk), max_tokens=_MAX_TOKENS
+            model=config.model, prompt=_prompt(classes, chunk, config), max_tokens=_MAX_TOKENS
         )
     )
-    return _Answer.model_validate_json(reply).instances
+    return _Answer.model_validate_json(read_json(reply)).instances
 
 
 def _instance(proposal: _Proposal, slots: list[str], chunk: Chunk) -> Instance:

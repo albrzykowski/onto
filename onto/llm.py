@@ -1,3 +1,4 @@
+import re
 from typing import Protocol
 
 from pydantic import BaseModel, Field
@@ -23,3 +24,18 @@ class LLM(Protocol):
     """
 
     def complete(self, request: CompletionRequest) -> str: ...
+
+
+_FENCE = re.compile(r"\s*```(?:json)?\s*\n(.*?)\n\s*```\s*", re.DOTALL)
+
+
+def read_json(reply: str) -> str:
+    """Strip the markdown code fence a model wraps its JSON in, and return what is inside.
+
+    Models asked for JSON frequently answer with a fenced block even when told not to, and
+    a reply that is valid JSON plus decoration still fails to parse. Only a *complete* fence
+    is removed: a reply that stops halfway has no closing fence, so it passes through
+    unchanged and fails loudly rather than being silently mangled.
+    """
+    fenced = _FENCE.fullmatch(reply)
+    return fenced.group(1) if fenced else reply

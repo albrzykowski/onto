@@ -7,7 +7,7 @@ from typing import Protocol
 from pydantic import BaseModel
 
 from onto.config import BuilderConfig
-from onto.llm import LLM, CompletionRequest
+from onto.llm import LLM, CompletionRequest, read_json
 
 logger = logging.getLogger(__name__)
 
@@ -97,7 +97,7 @@ def verify_merge(llm: LLM, config: BuilderConfig, existing: str, proposed: str) 
         )
     )
     try:
-        return _Verdict.model_validate_json(reply).same_concept
+        return _Verdict.model_validate_json(read_json(reply)).same_concept
     except ValueError as error:
         logger.error("merge verdict for %s/%s unreadable: %s", proposed, existing, error)
         return False

@@ -169,6 +169,9 @@ def step_then_prompt_states_instance_limit(state: dict, limit: str) -> None:
 def step_then_prompt_requires_single_string_slot(state: dict) -> None:
     prompt = state["llm"].prompts[0]
     assert "single string" in prompt and "never a list" in prompt
+
+
+@then("they pass LinkML schema-conformance validation without errors")
 def step_then_pass_linkml_schema_conformance(state: dict) -> None:
     assert state["violations"] == [], state["violations"]
 

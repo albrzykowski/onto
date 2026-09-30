@@ -29,6 +29,7 @@ class BuilderConfig(BaseModel):
     max_chunk_tokens: int = 2000
     overlap_tokens: int = 200
     batch_size: int = Field(default=1, ge=1)
+    max_concepts_per_batch: int = Field(default=5, ge=1)
     model: str = "mistral-large-latest"
     similarity_threshold: float = 0.85
     api_key: str | None = Field(default=None, validate_default=True)
