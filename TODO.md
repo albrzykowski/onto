@@ -209,3 +209,57 @@ wcześniejszy build, a nowe wartości i tak do niego nie dochodzą. Zdarzenie do
 pola, `slot` i `value` — bez nich log mówiłby, że coś wypadło, ale nie co i którego slotu dotyczyło;
 `ProvenanceEvent` serializuje z `exclude_none=True`, więc pozostałe linie pozostaną bajt w bajt
 takie same.
+
+## `onto/schema_gen.py` — zdarzenie i excerpt dla slotu
+
+Znalezione przy pierwszym uruchomieniu udokumentowanego quick startu (`onto build`, potem
+`onto update` z drugim katalogiem, w obu przypadkach wyjście 0). Oba przebiegi zachowują się
+tak samo i dowód jest w ich wyniku, nie w domysłach: `schema.yaml` zawiera slot `has_engine`
+zapisany przez oba tryby, a `provenance.jsonl` po obu przebiegach ma `class.created`,
+`instance.created`, `class.updated`, `instance.updated` — i **żadnego** zdarzenia slotu.
+
+**1. Slot utworzony z ekstrakcji nie jest w ogóle zgłaszany.** `onto/schema_gen.py` zna
+`_SLOT_UPDATED` (`features/update-mode.feature:53` to pilnuje), ale nie zna `_SLOT_CREATED`.
+Slot nadchodzący z ekstrakcji jest zapisywany do `schema.yaml` w `generate_tbox` (linia ~310)
+bez ani jednej linii w logu. Czytelnik logu nie dowiaduje się, że slot istnieje ani skąd
+przyszedł, a `AGENTS.md` wymaga provenance dla każdej zmiany ontologii — klasy, **slotu**
+i instancji.
+
+**2. T-Box nie zapisuje excerptu, A-Box zapisuje.** Sprawdzone na tym samym przebiegu:
+
+| element | annotation w YAML |
+|---|---|
+| klasa `Vehicle` | `source_documents` |
+| slot `has_engine` | `source_documents` |
+| instancja `VW_Golf` | `source_documents`, `source_excerpt` |
+
+Excerpt jest w zasięgu — `schema_gen.py` już przekazuje `source_excerpt=excerpt` do
+`log.record`, tylko nie zapisuje go w schemacie. `AGENTS.md` każe, żeby każda zmiana
+niosła „source document path, chunk id **and the source text excerpt**”, a
+`features/tbox-generation.feature:19-22` wymaga przy klasie tylko `source_documents`, zaś
+`features/abox-generation.feature:27` przy instancji wymaga wszystkich trzech. **Umowa
+i `AGENTS.md` mówią tu różne rzeczy** i to rozstrzyga, którą stronę poprawić.
+
+Proponowane scenariusze — pierwszy domyka dziurę w logu, drugi wyrównuje T-Box z A-Boxem:
+
+```gherkin
+  Scenario: Slot creation is logged with its source excerpt
+    Given the LLM returns the class Vehicle and the relation has_engine from one chunk
+    When the T-Box is generated
+    Then an "slot.created" event for has_engine is recorded with the chunk and the excerpt
+
+  Scenario: Classes and slots carry the excerpt they were derived from
+    Given the LLM returns the class Vehicle and the relation has_engine from one chunk
+    When the T-Box is generated
+    And every class and every slot has a "source_excerpt" annotation with the text it was derived from
+```
+
+Nazwy zdarzeń są już w `_MERGED`/`_CREATED`/`_UPDATED`/`_SLOT_UPDATED` i tworzą
+`class.merged`, `class.created`, `class.updated`, `slot.updated` — brakuje tylko
+`slot.created` i `_SLOT_UPDATED` używa innego sufiksu niż reszta, więc przy okazji warto
+je ujednolicic.
+
+Uwaga obok, nie defekt: slot `has_engine` wylądował na poziomie schematu, a klasa `Vehicle`
+ma `slots: []`. Wyciągnięta relacja nie została przypisana do klas, z których korpus ją
+łączy. To zależy od tego, co model zwróci, i nie da się tego stwierdzić bez scenariusza
+o tym, gdzie relacja ma trafić — dlatego jako pytanie, nie jako pozycja do naprawy.
