@@ -6,7 +6,7 @@ from pydantic import BaseModel, Field
 
 from onto.config import BuilderConfig
 from onto.dedup import Embedder, closest_of, verify_merge
-from onto.extraction import Candidate, CandidateKind
+from onto.extraction import Candidate, CandidateKind, pascal_name, snake_name
 from onto.llm import LLM, CompletionRequest, read_json
 from onto.provenance import ProvenanceLog, SourceRef
 
@@ -18,6 +18,15 @@ SCHEMA_NAMESPACE = "https://example.org"
 
 _MERGED = "class.merged"
 _SLOT_UPDATED = "slot.updated"
+_CREATED = "class.created"
+_UPDATED = "class.updated"
+
+# a relation is written as a slot, so it is the slot vocabulary the configuration constrains and
+# the slot vocabulary a rejection is reported against
+_REJECTION: dict[CandidateKind, tuple[str, str]] = {
+    "class": ("class.rejected", "not_in_allowed_classes"),
+    "relation": ("slot.rejected", "not_in_allowed_relations"),
+}
 
 _INSTRUCTIONS = """You are an ontology engineer designing a LinkML schema from concepts that \
 were extracted from a corpus.
@@ -134,6 +143,78 @@ def _cite(definition: _Provenance, chunk_ids: list[str]) -> None:
     cited.extend(chunk for chunk in chunk_ids if chunk not in cited)
 
 
+_Readings = dict[tuple[CandidateKind, str], tuple[list[SourceRef], str]]
+
+
+def _index(candidates: list[Candidate]) -> _Readings:
+    """Where each proposed concept was read: every chunk it came from, and the text of one.
+
+    A concept the corpus states in several chunks keeps all of them; the excerpt is the one of
+    the first of them, because a single passage is all a log line can point at.
+    """
+    indexed: _Readings = {}
+    for candidate in candidates:
+        key = (candidate.kind, candidate.name)
+        sources, excerpt = indexed.get(key, ([], candidate.source_excerpt))
+        sources.extend(candidate.source_documents)
+        indexed[key] = (sources, excerpt)
+    return indexed
+
+
+def _reading(readings: _Readings, kind: CandidateKind, name: str) -> tuple[list[SourceRef], str]:
+    return readings.get((kind, name), ([], ""))
+
+
+def _allowed(kind: CandidateKind, config: BuilderConfig) -> set[str] | None:
+    """The concept names the configuration allows, or `None` when it names none.
+
+    A configuration that states no allow-list scopes the build by domain alone and every
+    concept the corpus states is admissible. One that states an allow-list is a boundary the
+    prompt asks the model to respect and this module enforces, so the comparison runs on the
+    names in the form they are written in: `vehicle` in the configuration admits the `Vehicle`
+    the extractor normalises the model's wording to.
+    """
+    concepts = config.allowed_classes if kind == "class" else config.allowed_relations
+    if not concepts:
+        return None
+    normalise = pascal_name if kind == "class" else snake_name
+    return {normalise(name) for name in concepts}
+
+
+def _admit(
+    consolidated: dict[str, list[str]],
+    kind: CandidateKind,
+    config: BuilderConfig,
+    readings: _Readings,
+    log: ProvenanceLog,
+) -> list[str]:
+    """The proposed names the configuration allows, in the order the corpus stated them, and a
+    record of the ones it does not.
+
+    A prompt is a request rather than a boundary: a model that names a concept outside an
+    allow-list would otherwise have it written into the schema as though the list had been
+    honoured. Dropping it in silence is no better, because the ontology would then quietly
+    differ from the configuration that describes it, so every rejection is logged with the
+    chunk and the excerpt the concept was stated in.
+
+    The order is the order of `consolidated` rather than that of a set: the same corpus must
+    reach the model in the same order and write the same schema, or a build is not repeatable
+    even with the model answering the same thing.
+    """
+    allowed = _allowed(kind, config)
+    admitted: list[str] = []
+    for name in consolidated:
+        if allowed is None or name in allowed:
+            admitted.append(name)
+            continue
+        event, reason = _REJECTION[kind]
+        sources, excerpt = _reading(readings, kind, name)
+        log.record(
+            event=event, id=name, source_documents=sources, source_excerpt=excerpt, reason=reason
+        )
+    return admitted
+
+
 def _write(schema: _Schema, path: Path) -> Path:
     """A slot range and a superclass are written only when the model stated them, so a class
     the corpus describes no parent of keeps the plain shape an earlier build gave it."""
@@ -169,25 +250,40 @@ def _plan(llm: LLM, class_names: list[str], slot_names: list[str], config: Build
 
 
 def _classes(
-    consolidated: dict[str, list[str]], known_slots: dict[str, list[str]], plan: _Plan
+    consolidated: dict[str, list[str]],
+    known_slots: list[str],
+    plan: _Plan,
+    admitted: list[str],
+    readings: _Readings,
+    log: ProvenanceLog,
 ) -> dict[str, _ClassDefinition]:
-    """A class the model left out of its plan is not part of the schema."""
+    """A class the model left out of its plan, or one the configuration does not allow, is not
+    part of the schema. Every class that is written is recorded as created, so the log is a
+    record of the ontology that was built and not only of what an update changed."""
+    permitted = set(admitted)
+    written_slots = set(known_slots)
     definitions = {}
     for name, chunk_ids in consolidated.items():
         planned = plan.classes.get(name)
-        if planned is None:
+        if planned is None or name not in permitted:
             continue
         definitions[name] = _ClassDefinition(
             name=name,
             description=planned.description,
-            slots=[slot for slot in planned.slots if slot in known_slots],
+            slots=[slot for slot in planned.slots if slot in written_slots],
             annotations=_provenance(chunk_ids),
         )
+        sources, excerpt = _reading(readings, "class", name)
+        log.record(event=_CREATED, id=name, source_documents=sources, source_excerpt=excerpt)
     return definitions
 
 
 def generate_tbox(
-    candidates: list[Candidate], config: BuilderConfig, llm: LLM, output_dir: Path
+    candidates: list[Candidate],
+    config: BuilderConfig,
+    llm: LLM,
+    output_dir: Path,
+    log: ProvenanceLog,
 ) -> Path:
     """Write the T-Box of the extracted candidates as a LinkML schema.
 
@@ -197,7 +293,10 @@ def generate_tbox(
     """
     class_sources = _consolidate(candidates, "class")
     slot_sources = _consolidate(candidates, "relation")
-    plan = _plan(llm, list(class_sources), list(slot_sources), config)
+    readings = _index(candidates)
+    admitted = _admit(class_sources, "class", config, readings, log)
+    admitted_slots = _admit(slot_sources, "relation", config, readings, log)
+    plan = _plan(llm, admitted, admitted_slots, config)
     name = f"{output_dir.name}-schema"
     schema = _Schema(
         id=f"{SCHEMA_NAMESPACE}/{name}",
@@ -206,26 +305,13 @@ def generate_tbox(
         default_prefix=output_dir.name,
         default_range="string",
         imports=["linkml:types"],
-        classes=_classes(class_sources, slot_sources, plan),
+        classes=_classes(class_sources, admitted_slots, plan, admitted, readings, log),
         slots={
-            slot: _SlotDefinition(name=slot, annotations=_provenance(chunk_ids))
-            for slot, chunk_ids in slot_sources.items()
+            slot: _SlotDefinition(name=slot, annotations=_provenance(slot_sources[slot]))
+            for slot in admitted_slots
         },
     )
     return _write(schema, output_dir / SCHEMA_FILE_NAME)
-
-
-def _readings(
-    candidates: list[Candidate], kind: CandidateKind, name: str
-) -> tuple[list[SourceRef], str]:
-    """Where one proposed concept was read: every chunk it came from, and the text of one."""
-    matching = [
-        candidate for candidate in candidates if candidate.kind == kind and candidate.name == name
-    ]
-    return (
-        [source for candidate in matching for source in candidate.source_documents],
-        matching[0].source_excerpt if matching else "",
-    )
 
 
 def _update_plan(
@@ -266,7 +352,8 @@ def _resolve_range(llm: LLM, config: BuilderConfig, slot: str, current: str, pro
 def _duplicates(
     schema: _Schema,
     class_sources: dict[str, list[str]],
-    candidates: list[Candidate],
+    admitted: list[str],
+    readings: _Readings,
     config: BuilderConfig,
     llm: LLM,
     log: ProvenanceLog,
@@ -276,16 +363,25 @@ def _duplicates(
 
     The class already in the ontology survives and cites the chunks the merged name was read
     from, so the schema keeps saying where the concept was stated. The merged name is never
-    written: it is a second word for one concept, and a class stands for a concept.
+    written: it is a second word for one concept, and a class stands for a concept. Only
+    classes the configuration allows are put to the model, because a question about a concept
+    that will not be written has no use.
+
+    A name the schema already holds is not compared with the schema either: it is that concept,
+    and a vector of it sits at cosine 1.0 from itself, so the model would confirm a merge into
+    itself and the class would be swallowed instead of cited.
     """
     pairs = closest_of(
-        embedder, list(schema.classes), list(class_sources), config.similarity_threshold
+        embedder,
+        list(schema.classes),
+        [name for name in admitted if name not in schema.classes],
+        config.similarity_threshold,
     )
     duplicates = set()
     for name, (existing, _) in pairs.items():
         if not verify_merge(llm, config, existing, name):
             continue
-        sources, excerpt = _readings(candidates, "class", name)
+        sources, excerpt = _reading(readings, "class", name)
         _cite(schema.classes[existing].annotations, class_sources[name])
         log.record(
             event=_MERGED,
@@ -301,23 +397,30 @@ def _duplicates(
 def _add_classes(
     schema: _Schema,
     class_sources: dict[str, list[str]],
-    slot_sources: dict[str, list[str]],
+    admitted: list[str],
+    admitted_slots: list[str],
+    readings: _Readings,
     duplicates: set[str],
     plan: _UpdatePlan,
+    log: ProvenanceLog,
 ) -> None:
     """The classes the model left out of its plan are not added, and neither are the ones
-    merged into a class already there. A class the corpus names again keeps the description
-    it has and cites the new chunk beside the old ones: a class is one concept, and a later
-    document does not get to decide what it means. A `is_a` naming a class the schema will
-    not have is dropped, because a superclass that is not there describes nothing."""
-    known_slots = {*schema.slots, *slot_sources}
-    known_classes = {*schema.classes, *class_sources} - duplicates
+    merged into a class already there or refused by the configuration. A class the corpus names
+    again keeps the description it has and cites the new chunk beside the old ones: a class is
+    one concept, and a later document does not get to decide what it means. A `is_a` naming a
+    class the schema will not have is dropped, because a superclass that is not there describes
+    nothing. Both outcomes are logged, so the log says what the schema ended up holding."""
+    known_slots = {*schema.slots, *admitted_slots}
+    permitted = set(admitted)
+    known_classes = ({*schema.classes, *permitted}) - duplicates
     for name, chunk_ids in class_sources.items():
         planned = plan.classes.get(name)
-        if name in duplicates or planned is None:
+        if name in duplicates or planned is None or name not in permitted:
             continue
+        sources, excerpt = _reading(readings, "class", name)
         if name in schema.classes:
             _cite(schema.classes[name].annotations, chunk_ids)
+            log.record(event=_UPDATED, id=name, source_documents=sources, source_excerpt=excerpt)
             continue
         schema.classes[name] = _ClassDefinition(
             name=name,
@@ -326,12 +429,14 @@ def _add_classes(
             is_a=planned.is_a if planned.is_a in known_classes else None,
             annotations=_provenance(chunk_ids),
         )
+        log.record(event=_CREATED, id=name, source_documents=sources, source_excerpt=excerpt)
 
 
 def _add_slots(
     schema: _Schema,
     slot_sources: dict[str, list[str]],
-    candidates: list[Candidate],
+    admitted: list[str],
+    readings: _Readings,
     plan: _UpdatePlan,
     config: BuilderConfig,
     llm: LLM,
@@ -339,7 +444,8 @@ def _add_slots(
 ) -> None:
     """A slot the new documents repeat is left as it is, except that it cites them too; a slot
     they give another type is put to the model, and the type it keeps is the one written."""
-    for name, chunk_ids in slot_sources.items():
+    for name in admitted:
+        chunk_ids = slot_sources[name]
         proposed = plan.slot_ranges.get(name)
         known = schema.slots.get(name)
         if known is None:
@@ -351,7 +457,7 @@ def _add_slots(
         if proposed is None or known.range is None or proposed == known.range:
             continue
         known.range = _resolve_range(llm, config, name, known.range, proposed)
-        sources, excerpt = _readings(candidates, "relation", name)
+        sources, excerpt = _reading(readings, "relation", name)
         log.record(event=_SLOT_UPDATED, id=name, source_documents=sources, source_excerpt=excerpt)
 
 
@@ -373,8 +479,13 @@ def update_tbox(
     schema = _read(schema_path)
     class_sources = _consolidate(candidates, "class")
     slot_sources = _consolidate(candidates, "relation")
-    plan = _update_plan(llm, list(class_sources), list(slot_sources), config)
-    duplicates = _duplicates(schema, class_sources, candidates, config, llm, log, embedder)
-    _add_classes(schema, class_sources, slot_sources, duplicates, plan)
-    _add_slots(schema, slot_sources, candidates, plan, config, llm, log)
+    readings = _index(candidates)
+    admitted = _admit(class_sources, "class", config, readings, log)
+    admitted_slots = _admit(slot_sources, "relation", config, readings, log)
+    plan = _update_plan(llm, admitted, admitted_slots, config)
+    duplicates = _duplicates(schema, class_sources, admitted, readings, config, llm, log, embedder)
+    _add_classes(
+        schema, class_sources, admitted, admitted_slots, readings, duplicates, plan, log
+    )
+    _add_slots(schema, slot_sources, admitted_slots, readings, plan, config, llm, log)
     return _write(schema, schema_path)

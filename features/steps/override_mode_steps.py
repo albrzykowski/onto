@@ -189,9 +189,13 @@ def step_then_state_contains_only_current_fingerprints(
 
 
 @then("the provenance log starts from scratch")
-def step_then_provenance_log_starts_from_scratch(provenance_path: Path) -> None:
+def step_then_provenance_log_starts_from_scratch(state: dict, provenance_path: Path) -> None:
+    """Every line in the log belongs to the build that just ran: the class the previous build
+    wrote is gone with its schema, and the class this build wrote is there."""
     events = log_events(provenance_path) if provenance_path.exists() else []
-    assert [event["id"] for event in events] == ["Phantom"], events
+    ids = [event["id"] for event in events]
+    assert state["old_class"] not in ids, events
+    assert state["class_names"][0] in ids, events
 
 
 @then("both documents are sent to the LLM")

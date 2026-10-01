@@ -80,11 +80,18 @@ def _words(name: str) -> list[str]:
     return [word for word in _NON_WORD.split(_CAMEL_BOUNDARY.sub(" ", name)) if word]
 
 
-def _pascal_case(name: str) -> str:
+def pascal_name(name: str) -> str:
+    """A class name in the one form the schema is written in."""
     return "".join(word.capitalize() for word in _words(name))
 
 
-def _snake_case(name: str) -> str:
+def snake_name(name: str) -> str:
+    """A relation name in the one form the schema is written in.
+
+    Both forms are public because the configuration states concept names in its own casing and
+    the schema writer has to compare a name it is about to write against those; both sides have
+    to be in the form the name is actually written in.
+    """
     return "_".join(word.lower() for word in _words(name))
 
 
@@ -176,6 +183,6 @@ def extract(chunks: list[Chunk], config: BuilderConfig, llm: LLM) -> list[Candid
             )
             continue
         sources = [SourceRef(path=chunk.source_path, chunk_id=chunk.chunk_id) for chunk in batch]
-        candidates.extend(_candidates_of("class", answer.classes, sources, _pascal_case))
-        candidates.extend(_candidates_of("relation", answer.relations, sources, _snake_case))
+        candidates.extend(_candidates_of("class", answer.classes, sources, pascal_name))
+        candidates.extend(_candidates_of("relation", answer.relations, sources, snake_name))
     return candidates

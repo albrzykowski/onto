@@ -107,7 +107,7 @@ def _override(input_dir: Path, output_dir: Path, config: BuilderConfig, llm: LLM
     documents = load_documents(input_dir)
     chunks = _chunks_of(documents, config)
     candidates = extract(chunks, config, llm)
-    schema_path = generate_tbox(candidates, config, llm, output_dir)
+    schema_path = generate_tbox(candidates, config, llm, output_dir, log)
     generate_abox(chunks, config, llm, schema_path, log)
     _write_state(_fingerprints(documents, input_dir), output_dir)
     logger.info("built %s from %s documents", output_dir, len(documents))

@@ -7,7 +7,7 @@ from pytest_bdd import given, parsers, then, when
 
 from features.steps.support import FakeLLM, quoted, split_names, valid_config, word
 from onto.extraction import Candidate, CandidateKind
-from onto.provenance import SourceRef
+from onto.provenance import ProvenanceLog, SourceRef
 from onto.schema_gen import generate_tbox
 
 DEFAULT_CHUNK = "corpus/article1.txt#c1"
@@ -61,9 +61,9 @@ def client_for(state: dict) -> FakeLLM:
     return FakeLLM(respond)
 
 
-def generate(state: dict, output_dir: Path) -> None:
+def generate(state: dict, output_dir: Path, log: ProvenanceLog) -> None:
     state["schema_path"] = generate_tbox(
-        state["candidates"], valid_config(), client_for(state), output_dir
+        state["candidates"], valid_config(), client_for(state), output_dir, log
     )
     state["document"] = yaml.safe_load(state["schema_path"].read_text(encoding="utf-8"))
 
@@ -103,17 +103,17 @@ def step_given_repeated_candidate(state: dict, count: str, name: str) -> None:
 
 
 @given("a generated T-Box")
-def step_given_generated_tbox(state: dict, output_dir: Path) -> None:
+def step_given_generated_tbox(state: dict, output_dir: Path, provenance_path: Path) -> None:
     if not state["candidates"]:
         extract_from(state, CORPUS_CLASSES, CORPUS_SLOTS)
-    generate(state, output_dir)
+    generate(state, output_dir, ProvenanceLog(provenance_path, "override"))
 
 
 # When
 
 @when("the T-Box is generated")
-def step_when_tbox_is_generated(state: dict, output_dir: Path) -> None:
-    generate(state, output_dir)
+def step_when_tbox_is_generated(state: dict, output_dir: Path, provenance_path: Path) -> None:
+    generate(state, output_dir, ProvenanceLog(provenance_path, "override"))
 
 
 @when("the schema is validated")

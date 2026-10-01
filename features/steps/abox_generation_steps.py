@@ -34,11 +34,17 @@ def instance_reply(name: str, klass: str, slots: dict[str, str]) -> str:
     )
 
 
-def tbox_of(state: dict, output_dir: Path, class_names: list[str], slot_names: list[str]) -> None:
+def tbox_of(
+    state: dict,
+    output_dir: Path,
+    provenance_path: Path,
+    class_names: list[str],
+    slot_names: list[str],
+) -> None:
     """Instances are only meaningful against a T-Box, so the scenarios that do not name
     one get the schema the feature talks about."""
     extract_from(state, class_names, slot_names)
-    generate_tbox(state, output_dir)
+    generate_tbox(state, output_dir, ProvenanceLog(provenance_path, "override"))
 
 
 def client_for(state: dict) -> FakeLLM:
@@ -85,9 +91,9 @@ def validate(state: dict) -> None:
     )
 )
 def step_given_generated_tbox_with_class_and_slot(
-    state: dict, output_dir: Path, klass: str, slot: str
+    state: dict, output_dir: Path, provenance_path: Path, klass: str, slot: str
 ) -> None:
-    tbox_of(state, output_dir, [klass], [slot])
+    tbox_of(state, output_dir, provenance_path, [klass], [slot])
 
 
 @given(
@@ -108,15 +114,15 @@ def step_given_llm_returns_instance_with_slot(
     )
 )
 def step_given_llm_returns_instance_outside_the_tbox(
-    state: dict, output_dir: Path, klass: str
+    state: dict, output_dir: Path, provenance_path: Path, klass: str
 ) -> None:
-    tbox_of(state, output_dir, ["Vehicle"], ["has_engine"])
+    tbox_of(state, output_dir, provenance_path, ["Vehicle"], ["has_engine"])
     state["reply"] = instance_reply("Mystery Thing", klass, {})
 
 
 @given(parsers.re(r"a generated A-Box(?: and its T-Box)?"))
 def step_given_generated_abox(state: dict, output_dir: Path, provenance_path: Path) -> None:
-    tbox_of(state, output_dir, ["Vehicle"], ["has_engine"])
+    tbox_of(state, output_dir, provenance_path, ["Vehicle"], ["has_engine"])
     state["reply"] = instance_reply("VW Golf", "Vehicle", {"has_engine": "1.6 TDI"})
     build(state, provenance_path)
 
