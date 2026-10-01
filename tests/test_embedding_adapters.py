@@ -5,14 +5,19 @@ LiteLLM exposes and back, and no Gherkin scenario says so: it is tested directly
 `litellm.embedding` replaced by a fake that records the request instead of calling a real API.
 """
 
+import inspect
+
 import litellm
 import pytest
 
 from onto.dedup import Embedder, EmbeddingError
 from onto.embeddings import LiteLLMEmbedder
+from onto.llm_litellm import NUM_RETRIES, TIMEOUT_SECONDS
 
 TEXTS = ["Vehicle", "Car"]
 VECTORS = [[1.0, 0.0], [0.6, 0.8]]
+
+RETRY_KEYWORDS = ("max_retries", "num_retries")
 
 
 class FakeEmbedding:
@@ -43,6 +48,40 @@ def test_the_texts_reach_the_provider_and_come_back_as_vectors(
     assert embedder.embed(TEXTS) == VECTORS
     assert fake.requests[0]["input"] == TEXTS
     assert fake.requests[0]["model"] == "mistral/mistral-embed"
+
+
+def test_the_call_is_bounded_in_time_and_retried(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A provider that never answers must not hold a build open, and a transient failure must
+    not cost the run the concepts the batch stated."""
+    fake = FakeEmbedding()
+    install(monkeypatch, fake)
+    embedder: Embedder = LiteLLMEmbedder(api_key="test-key", model="mistral/mistral-embed")
+
+    embedder.embed(TEXTS)
+
+    assert fake.requests[0]["timeout"] == TIMEOUT_SECONDS
+    assert fake.requests[0]["max_retries"] == NUM_RETRIES
+
+
+def test_the_retry_keyword_reaches_litellm(monkeypatch: pytest.MonkeyPatch) -> None:
+    """`litellm.embedding` answers to `max_retries` and not to `num_retries`, and it reads the
+    count out of `**kwargs` so neither name is in the signature.
+
+    A fake records whatever it is handed, so sending the name this call ignores still looks
+    like sending a retry count: the build would drop every concept a transient failure cost
+    it while this file's other tests stayed green. Hence the keyword the adapter sent is
+    checked against the real function.
+    """
+    source = inspect.getsource(litellm.embedding)  # before the fake takes litellm's place
+    fake = FakeEmbedding()
+    install(monkeypatch, fake)
+    embedder: Embedder = LiteLLMEmbedder(api_key="test-key", model="mistral/mistral-embed")
+
+    embedder.embed(TEXTS)
+
+    sent = [name for name in fake.requests[0] if name in RETRY_KEYWORDS]
+    assert len(sent) == 1, f"expected one retry keyword, sent {fake.requests[0]}"
+    assert f'kwargs.get("{sent[0]}"' in source, f"litellm.embedding never reads {sent[0]}"
 
 
 def test_the_key_is_sent_to_the_provider(monkeypatch: pytest.MonkeyPatch) -> None:

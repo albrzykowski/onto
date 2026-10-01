@@ -15,6 +15,18 @@ import openai
 
 from onto.llm import CompletionRequest, LLMError
 
+# LiteLLM's own default is 6000 seconds, which is over an hour of a build waiting on a
+# provider that never answers. Long enough for a batch of dense prose to be answered, short
+# enough that such a request does not hold a build open. Both adapters wait the same time, so
+# one build cannot be waiting on a chat answer for longer than on its embeddings.
+TIMEOUT_SECONDS = 120
+
+# A provider answers a burst of requests with a transient failure more often than it fails
+# for good, and the callers treat `LLMError` as the unit worth retrying: extraction logs it
+# and skips the batch, which would drop every concept that batch stated. Retrying here turns
+# a blip into an answer; a fault that is not transient still raises, once the attempts run out.
+NUM_RETRIES = 3
+
 
 class LiteLLMLLM:
     """Answers prompts with the provider named by the model."""
@@ -30,6 +42,8 @@ class LiteLLMLLM:
                 messages=[{"role": "user", "content": request.prompt}],
                 max_tokens=request.max_tokens,
                 api_key=self._api_key,
+                timeout=TIMEOUT_SECONDS,
+                max_retries=NUM_RETRIES,
             )
         # `litellm.APIError` is not the base of LiteLLM's failures: every one of them derives
         # from `openai.APIError` instead, because LiteLLM answers with OpenAI-shaped responses.

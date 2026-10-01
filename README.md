@@ -153,6 +153,14 @@ Pass `api_key=config.api_key` to the adapter. LiteLLM will not look the key up f
 environment for a request that names a provider, so leaving it out sends a request with no
 credentials and the provider answers `Invalid API Key` — the same as a key that really is wrong.
 
+Both adapters bound each request: `onto.llm_litellm.TIMEOUT_SECONDS` (120, against LiteLLM's
+own 6000) and `NUM_RETRIES` (3). A provider that never answers cannot hold a build open, and a
+transient failure is retried rather than costing the run every concept that batch stated. A
+failure that survives the attempts raises as before, and the caller logs it and skips the
+batch. They are module constants, not configuration fields: there is nothing about them that a
+user of this project should have to tune, and every field in `config.yaml` is a decision about
+the ontology.
+
 `build` runs the whole pipeline — ingestion, chunking, extraction, T-Box, A-Box — in the
 mode `config.mode` names. The steps are also available one by one, if you want to inspect
 or change a stage:
@@ -168,10 +176,13 @@ from onto.schema_gen import generate_tbox
 documents = load_documents(Path("corpus"))
 chunks = [chunk for document in documents for chunk in chunk_document(document, config)]
 candidates = extract(chunks, config, llm)
-schema_path = generate_tbox(candidates, config, llm, Path("ontology"))
 log = ProvenanceLog(Path("ontology/provenance.jsonl"), mode=config.mode)
+schema_path = generate_tbox(candidates, config, llm, Path("ontology"), log)
 generate_abox(chunks, config, llm, schema_path, log)
 ```
+
+The log is not something the schema is written beside afterwards: the schema writer records
+every class it writes, refuses or updates in it as it goes, so it has to exist first.
 
 The schema is the only vocabulary for the instances: an instance of a class the
 T-Box does not define is never written — it is rejected and logged as
@@ -190,8 +201,10 @@ type is put to the model to resolve. The provenance log of the earlier build is 
 to, not replaced, and a run that finds nothing new writes nothing at all.
 
 Telling a repeated concept from a new one is done with embeddings, so update mode is given
-an embedder. The one that ships uses the `embedding_model` and the `embedding_api_key` from the
-configuration, falling back to `api_key` when both models name the same provider:
+an embedder. The one that ships is handed `embedding_model` and `embedding_api_key` from the
+configuration, and nothing else: a build may answer and embed through different providers,
+so `embedding_api_key` is its own key and there is no fallback to `api_key` and no
+environment variable to pick one up from.
 
 ```python
 from onto.builder import build

@@ -3,15 +3,20 @@
 The adapter has no Gherkin contract — it only translates `onto.llm.CompletionRequest` into the
 one call LiteLLM exposes and back — so it is tested directly, with `litellm.completion` replaced
 by a fake that records the request instead of calling a real API.
+
+A fake records whatever it is handed, so a keyword LiteLLM ignores still looks like a keyword
+that was sent. `test_the_retry_keyword_is_one_litellm_reads` closes that gap by checking the
+name against the real function.
 """
 
+import inspect
 from types import SimpleNamespace
 
 import litellm
 import pytest
 
 from onto.llm import LLM, CompletionRequest, LLMError
-from onto.llm_litellm import LiteLLMLLM
+from onto.llm_litellm import NUM_RETRIES, TIMEOUT_SECONDS, LiteLLMLLM
 
 REQUEST = CompletionRequest(model="mistral/test-model", prompt="name the concepts", max_tokens=512)
 REPLY = '{"classes": [], "relations": []}'
@@ -21,7 +26,11 @@ SENT = {
     "messages": [{"role": "user", "content": "name the concepts"}],
     "max_tokens": 512,
     "api_key": "test-key",
+    "timeout": TIMEOUT_SECONDS,
+    "max_retries": NUM_RETRIES,
 }
+
+RETRY_KEYWORDS = ("max_retries", "num_retries")
 
 
 class FakeCompletion:
@@ -97,3 +106,28 @@ def test_a_reply_without_content_is_an_empty_string(monkeypatch: pytest.MonkeyPa
     llm: LLM = LiteLLMLLM(api_key="test-key")
 
     assert llm.complete(REQUEST) == ""
+
+
+def _retry_keyword_sent(monkeypatch: pytest.MonkeyPatch) -> str:
+    fake = FakeCompletion()
+    install(monkeypatch, fake)
+    llm: LLM = LiteLLMLLM(api_key="test-key")
+
+    llm.complete(REQUEST)
+
+    sent = [name for name in fake.requests[0] if name in RETRY_KEYWORDS]
+    assert len(sent) == 1, f"expected one retry keyword, sent {fake.requests[0]}"
+    return sent[0]
+
+
+def test_the_retry_keyword_reaches_litellm(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The retry count is read out of `**kwargs`, so it is in neither of LiteLLM's signatures.
+
+    A fake records whatever it is handed, so a keyword LiteLLM ignores still looks like a
+    keyword that was sent: `litellm.embedding` answers to `max_retries` and not to
+    `num_retries`, and an adapter using the alias would pass every other test here while
+    retrying nothing. So the keyword the adapter sent is checked against the real function.
+    """
+    source = inspect.getsource(litellm.completion)  # before the fake takes litellm's place
+    keyword = _retry_keyword_sent(monkeypatch)
+    assert f'kwargs.get("{keyword}"' in source, f"litellm.completion never reads {keyword}"

@@ -10,6 +10,7 @@ import litellm
 import openai
 
 from onto.dedup import EmbeddingError
+from onto.llm_litellm import NUM_RETRIES, TIMEOUT_SECONDS
 
 
 class LiteLLMEmbedder:
@@ -22,7 +23,13 @@ class LiteLLMEmbedder:
     def embed(self, texts: list[str]) -> list[list[float]]:
         """Return one vector per text, in the order the texts were given."""
         try:
-            reply = litellm.embedding(model=self._model, input=texts, api_key=self._api_key)
+            reply = litellm.embedding(
+                model=self._model,
+                input=texts,
+                api_key=self._api_key,
+                timeout=TIMEOUT_SECONDS,
+                max_retries=NUM_RETRIES,
+            )
         # `litellm.APIError` is not the base of LiteLLM's failures: every one of them derives
         # from `openai.APIError` instead, because LiteLLM answers with OpenAI-shaped responses.
         # Catching `litellm.APIError` here matches nothing, not even a wrong key.
