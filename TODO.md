@@ -152,3 +152,60 @@ zachowanie dla katalogu poza roboczym, żeby przyszła refaktoryzacja nie uznał
 Timeout i ponowienia z `onto/llm_litellm.py` celowo **nie** mają scenariusza: to zachowanie
 adaptera, który w tym repozytorium nie ma kontraktu Gherkin i jest testowany jednostkowo
 (`tests/test_llm_adapters.py`, `tests/test_embedding_adapters.py`).
+
+## `features/abox-generation.feature` — slot wskazujący na niezapisaną encję
+
+**Ten punkt jest zablokowany przez inny scenariusz w tym samym pliku i wymaga decyzji autora
+przed jakąkolwiek zmianą w kodzie.**
+
+Wartość slotu jest zapisywana jako id instancji, na którą wskazuje. Nic nie pilnuje, że taka
+instancja istnieje, więc `The_Golf.has_engine: 1_6_TDI` powstaje nawet wtedy, gdy `1_6_TDI`
+nigdzie nie trafiło do `instances.yaml`. Schema deklaruje zakres jako `string`, więc walidacja
+LinkML to przepuszcza, a `abox-generation.feature` („Instances validated against the schema")
+nie zauważa. Wyjątek ten sam co w A-Boksie: encja jest w excerptcie, który zapisujemy, więc
+nic nie ginie poza właściwym połączeniem.
+
+Nie da się tego naprawić bez zmiany kontraktu, bo `features/abox-generation.feature:12`
+wprost wymaga zapisania wiszącej wartości:
+
+```gherkin
+    And the LLM returns the instance "VW Golf" of class Vehicle with has_engine pointing to "1.6 TDI"
+    ...
+    And the instance has the slot has_engine with the value "1_6_TDI"
+```
+
+Jedna instancja w scenariuszu, `1_6_TDI` nie jest żadną instancją — feature nakazuje zapisać
+dokładnie ten przypadek, który chcemy upuszczać. Osłabienie asercji w
+`features/steps/abox_generation_steps.py:164` byłoby obejściem tego sameco rodzaju co edycja
+`.feature`, tylko bez nazwy.
+
+Do rozstrzygnięcia są dwa scenariusze i T-Box, bo encja, na którą slot wskazuje, musi mieć
+klasę, inaczej zostanie odrzucona jako spoza T-Boxu:
+
+```gherkin
+  Background:
+    Given a generated T-Box with the classes Vehicle and Engine and the slot has_engine
+
+  Scenario: A slot value that names a written instance is written
+    Given the LLM returns the instance "VW Golf" of class Vehicle with has_engine pointing to "1.6 TDI"
+    And the LLM returns the instance "1.6 TDI" of class Engine
+    When the A-Box is generated
+    Then it contains the instance "VW_Golf" of class Vehicle
+    And the instance has the slot has_engine with the value "1_6_TDI"
+
+  Scenario: A slot value that names no written instance is dropped and recorded
+    Given the LLM returns the instance "VW Golf" of class Vehicle with has_engine pointing to "1.6 TDI"
+    When the A-Box is generated
+    Then the instance "VW_Golf" is written
+    And the instance has no slot has_engine
+    And an "instance.rejected" event with the reason "unresolved_reference" is recorded for the value "1_6_TDI"
+```
+
+Implementacja po zaakceptowaniu, w `onto/instance_gen.py`: `_merge` zna zbiór id dopiero po
+dodaniu wszystkich instancji, więc rozstrzyganie musi być drugim przebiegiem — wartość wskazująca
+na instancję znalezioną w późniejszym chunku nie jest wisząca. Upuszczenie dotyczy tylko
+instancji zapisywanych po raz pierwszy: wpis już istniejący zachowuje sloty, które ustanowił
+wcześniejszy build, a nowe wartości i tak do niego nie dochodzą. Zdarzenie dostanie dwa opcjonalne
+pola, `slot` i `value` — bez nich log mówiłby, że coś wypadło, ale nie co i którego slotu dotyczyło;
+`ProvenanceEvent` serializuje z `exclude_none=True`, więc pozostałe linie pozostaną bajt w bajt
+takie same.
