@@ -15,8 +15,11 @@ logger = logging.getLogger(__name__)
 INSTANCES_FILE_NAME = "instances.yaml"
 
 _MAX_TOKENS = 4096
+_CREATED = "instance.created"
+_UPDATED = "instance.updated"
 _REJECTED = "instance.rejected"
 _NOT_IN_TBOX = "not_in_tbox"
+_IDENTIFIER_TAKEN = "identifier_taken"
 
 _INSTRUCTIONS = """You are an ontology engineer. Read the source text and name the concrete \
 entities it states, as instances of the classes listed below.
@@ -51,9 +54,15 @@ def _output_contract(config: BuilderConfig) -> str:
 
 
 class Instance(BaseModel):
-    """A concrete fact stated by the corpus: an entity of one of the T-Box classes."""
+    """A concrete fact stated by the corpus: an entity of one of the T-Box classes.
+
+    `name` is the wording the model used and `id` is the token it is written under. Both are
+    kept because two different wordings can reduce to one token, and an ontology that dropped
+    one of them silently would be indistinguishable from one that simply did not find it.
+    """
 
     id: str
+    name: str
     class_name: str
     slot_values: dict[str, str] = Field(default_factory=dict)
     source_documents: list[SourceRef] = Field(default_factory=list)
@@ -117,6 +126,7 @@ def _proposals(
 def _instance(proposal: _Proposal, slots: list[str], chunk: Chunk) -> Instance:
     return Instance(
         id=_identifier(proposal.name),
+        name=proposal.name,
         class_name=proposal.class_name,
         slot_values={
             slot: _identifier(value) for slot, value in proposal.slots.items() if slot in slots
@@ -141,6 +151,25 @@ def _entry(instance: Instance) -> dict[str, Any]:
     }
 
 
+def _cite_entry(entry: dict[str, Any], instance: Instance) -> None:
+    """Add the chunks a later document states the entity in to what the entry already cites."""
+    cited = entry["annotations"]["source_documents"]["value"]
+    for source in instance.source_documents:
+        if source.chunk_id not in cited:
+            cited.append(source.chunk_id)
+
+
+def _cite(instance: Instance, other: Instance) -> None:
+    """Every chunk the same entity was stated in is remembered, so the ontology keeps saying
+    where the fact came from however many documents agree on it."""
+    cited = [source.chunk_id for source in instance.source_documents]
+    instance.source_documents.extend(
+        source
+        for source in other.source_documents
+        if source.chunk_id not in cited
+    )
+
+
 def _instances_of(
     chunks: list[Chunk],
     config: BuilderConfig,
@@ -148,7 +177,14 @@ def _instances_of(
     classes: dict[str, list[str]],
     log: ProvenanceLog,
 ) -> dict[str, Instance]:
-    """What the chunks state, as instances of the classes the T-Box defines."""
+    """What the chunks state, as instances of the classes the T-Box defines.
+
+    An entity the corpus names in several chunks becomes one instance citing all of them. Two
+    entities whose names reduce to the same token are a different matter: only one can stand
+    under that id, so the one already there is kept and the other is refused and logged rather
+    than silently overwriting it. The log says the id and quotes the text the refused entity
+    was read from, which is where its name is to be found.
+    """
     instances: dict[str, Instance] = {}
     for chunk in chunks:
         try:
@@ -167,13 +203,49 @@ def _instances_of(
                 )
                 continue
             instance = _instance(proposal, classes[proposal.class_name], chunk)
-            # a later chunk stating the same entity replaces the earlier one
-            instances[instance.id] = instance
+            known = instances.get(instance.id)
+            if known is None:
+                instances[instance.id] = instance
+            elif known.name == instance.name:
+                _cite(known, instance)
+            else:
+                logger.warning(
+                    "%s and %s both name the instance %s; keeping the first",
+                    known.name,
+                    instance.name,
+                    instance.id,
+                )
+                log.record(
+                    event=_REJECTED,
+                    id=instance.id,
+                    source_excerpt=instance.source_excerpt,
+                    source_documents=instance.source_documents,
+                    reason=_IDENTIFIER_TAKEN,
+                )
     return instances
 
 
-def _entries_of(instances: dict[str, Instance]) -> dict[str, Any]:
-    return {key: _entry(value) for key, value in instances.items()}
+def _merge(entries: dict[str, Any], instances: dict[str, Instance], log: ProvenanceLog) -> None:
+    """Write the instances into the entries already on disk, one event per instance written.
+
+    An instance already there is not restated by a later document that names the same entity
+    with less of it: the earlier entry stands and cites the new chunk, which is how a class
+    the corpus names twice is treated in the T-Box.
+    """
+    for instance in instances.values():
+        entry = entries.get(instance.id)
+        if entry is None:
+            entries[instance.id] = _entry(instance)
+            event = _CREATED
+        else:
+            _cite_entry(entry, instance)
+            event = _UPDATED
+        log.record(
+            event=event,
+            id=instance.id,
+            source_documents=instance.source_documents,
+            source_excerpt=instance.source_excerpt,
+        )
 
 
 def _write(entries: dict[str, Any], path: Path) -> Path:
@@ -202,14 +274,14 @@ def generate_abox(
 
     The T-Box is the only vocabulary: an instance of a class the schema does not define is
     rejected and logged rather than written, and a slot the class does not have is dropped.
-    Every written instance carries the chunk and the excerpt it was read from. Each chunk
-    is one request; a failure is logged and the chunk skipped, so one bad chunk never
-    aborts the build — the catch is deliberately wider, because an adapter that lets a
-    provider's own exception escape would otherwise take the whole build down.
+    Every written instance is recorded in the log and carries the chunk and the excerpt it was
+    read from. Each chunk is one request; a failure is logged and the chunk skipped, so one bad
+    chunk never aborts the build — the catch is deliberately wider, because an adapter that lets
+    a provider's own exception escape would otherwise take the whole build down.
     """
-    instances = _instances_of(chunks, config, llm, _classes_of(schema_path), log)
-    path = schema_path.parent / INSTANCES_FILE_NAME
-    return _write(_entries_of(instances), path)
+    entries: dict[str, Any] = {}
+    _merge(entries, _instances_of(chunks, config, llm, _classes_of(schema_path), log), log)
+    return _write(entries, schema_path.parent / INSTANCES_FILE_NAME)
 
 
 def extend_instances(
@@ -220,14 +292,14 @@ def extend_instances(
     log: ProvenanceLog,
 ) -> Path:
     """Add to `instances.yaml` the instances the new chunks state, and leave every entry
-    already written exactly as it is.
+    already written as it is.
 
     An update adds what the corpus has newly stated; it does not restate what an earlier
     build already established, so an instance accepted once is not overwritten by a later
-    document that names the same entity with less of it.
+    document that names the same entity with less of it. Naming that entity again is not
+    nothing, though, so the entry cites the document that named it.
     """
     path = schema_path.parent / INSTANCES_FILE_NAME
     entries = _read(path)
-    instances = _instances_of(chunks, config, llm, _classes_of(schema_path), log)
-    entries.update(_entries_of(instances))
+    _merge(entries, _instances_of(chunks, config, llm, _classes_of(schema_path), log), log)
     return _write(entries, path)
