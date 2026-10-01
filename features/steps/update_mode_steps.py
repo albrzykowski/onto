@@ -30,9 +30,9 @@ def input_dir(workdir: Path) -> Path:
     return workdir / CORPUS
 
 
-def chunk_id(workdir: Path, name: str) -> str:
+def chunk_id(name: str) -> str:
     """The id `chunk_document` gives the first chunk of a document of this corpus."""
-    return f"{input_dir(workdir) / name}#c1"
+    return f"{CORPUS}/{name}#c1"
 
 
 def write_document(workdir: Path, name: str, text: str) -> None:
@@ -90,8 +90,8 @@ def source_document_annotation(values: list[str]) -> dict:
     return {"tag": "source_documents", "value": values}
 
 
-def existing_schema(workdir: Path) -> dict:
-    cited = [chunk_id(workdir, "old.txt")]
+def existing_schema() -> dict:
+    cited = [chunk_id("old.txt")]
     return {
         "id": "https://example.org/ontology-schema",
         "name": "ontology-schema",
@@ -116,14 +116,14 @@ def existing_schema(workdir: Path) -> dict:
     }
 
 
-def existing_instances(workdir: Path) -> dict:
+def existing_instances() -> dict:
     return {
         "instances": {
             EXISTING_INSTANCE: {
                 "class": EXISTING_CLASS,
                 "has_engine": "1_6_TDI",
                 "annotations": {
-                    "source_documents": source_document_annotation([chunk_id(workdir, "old.txt")]),
+                    "source_documents": source_document_annotation([chunk_id("old.txt")]),
                     "source_excerpt": {
                         "tag": "source_excerpt",
                         "value": "The Golf has a 1.6 TDI engine.",
@@ -223,14 +223,14 @@ def client_for(state: dict) -> FakeLLM:
 # Background: the ontology an earlier build wrote
 
 @given(parsers.re(rf'an existing ontology with a schema containing the class {word("klass")}$'))
-def step_given_existing_ontology(state: dict, workdir: Path, schema_path: Path) -> None:
+def step_given_existing_ontology(state: dict, schema_path: Path) -> None:
     state["schema_path"] = schema_path
-    write_yaml(schema_path, existing_schema(workdir))
+    write_yaml(schema_path, existing_schema())
 
 
 @given(parsers.re(rf'the instance {quoted("name")}'))
-def step_given_existing_instance(workdir: Path, output_dir: Path) -> None:
-    write_yaml(output_dir / "instances.yaml", existing_instances(workdir))
+def step_given_existing_instance(output_dir: Path) -> None:
+    write_yaml(output_dir / "instances.yaml", existing_instances())
 
 
 @given(parsers.re(rf'a state\.json file with the fingerprint of {quoted("name")}'))

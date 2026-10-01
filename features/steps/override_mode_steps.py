@@ -6,6 +6,7 @@ from pytest_bdd import given, parsers, then, when
 
 from features.steps.support import FakeLLM, log_events, quoted, valid_config, word
 from onto.builder import STATE_FILE_NAME, build
+from onto.chunking import document_name
 from onto.ingestion import load_documents
 from onto.provenance import ProvenanceLog
 
@@ -202,4 +203,5 @@ def step_then_provenance_log_starts_from_scratch(state: dict, provenance_path: P
 def step_then_both_documents_are_sent_to_the_llm(state: dict, workdir: Path) -> None:
     prompts = "\n".join(state["client"].prompts)
     for document in load_documents(input_dir(workdir)):
-        assert str(document.path) in prompts, f"{document.path} was never sent"
+        name = document_name(document.path)
+        assert name in prompts, f"{name} was never sent"

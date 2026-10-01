@@ -121,7 +121,7 @@ def _instance(proposal: _Proposal, slots: list[str], chunk: Chunk) -> Instance:
         slot_values={
             slot: _identifier(value) for slot, value in proposal.slots.items() if slot in slots
         },
-        source_documents=[SourceRef(path=chunk.source_path, chunk_id=chunk.chunk_id)],
+        source_documents=[chunk.source_ref()],
         source_excerpt=proposal.excerpt,
     )
 
@@ -162,7 +162,7 @@ def _instances_of(
                     event=_REJECTED,
                     id=_identifier(proposal.name),
                     source_excerpt=proposal.excerpt,
-                    source_documents=[SourceRef(path=chunk.source_path, chunk_id=chunk.chunk_id)],
+                    source_documents=[chunk.source_ref()],
                     reason=_NOT_IN_TBOX,
                 )
                 continue

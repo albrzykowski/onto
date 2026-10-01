@@ -305,8 +305,8 @@ def step_then_event_has_id(state: dict, id: str) -> None:
 )
 def step_then_event_source_documents(state: dict, path: str, chunk: str) -> None:
     source = checked_event(state)["source_documents"][0]
-    assert source["path"].endswith(path)
-    assert source["chunk_id"].endswith(f"#{chunk}")
+    assert source["path"] == path
+    assert source["chunk_id"] == f"{path}#{chunk}"
 
 
 @then(parsers.re(rf'the event has a source_excerpt equal to {quoted("excerpt")}'))

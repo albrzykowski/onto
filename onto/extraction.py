@@ -182,7 +182,7 @@ def extract(chunks: list[Chunk], config: BuilderConfig, llm: LLM) -> list[Candid
                 "extraction failed for %s: %s", [chunk.chunk_id for chunk in batch], error
             )
             continue
-        sources = [SourceRef(path=chunk.source_path, chunk_id=chunk.chunk_id) for chunk in batch]
+        sources = [chunk.source_ref() for chunk in batch]
         candidates.extend(_candidates_of("class", answer.classes, sources, pascal_name))
         candidates.extend(_candidates_of("relation", answer.relations, sources, snake_name))
     return candidates
