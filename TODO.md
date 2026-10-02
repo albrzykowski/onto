@@ -3,7 +3,7 @@
 Scenariusze do dopisania przez autora Gherkina. Agent ich nie pisze — `AGENTS.md`
 zabrania edycji plików `.feature`; po ich dodaniu agent przechodzi normalny cykl ATDD.
 
-## `features/config-loading.feature`
+## `features/adapter-wiring.feature`
 
 Klucze `api_key` i `embedding_api_key` muszą trafić do odpowiednich adapterów.
 Brak scenariusza sprawdzającego, że klucze faktycznie docierają do LiteLLM.
