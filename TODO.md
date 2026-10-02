@@ -47,6 +47,64 @@ trafi do `features/tbox-generation.feature`.
     Then the first chunk has the chunk id "corpus/article1.txt#c1"
 ```
 
+## `features/abox-generation.feature`
+
+### Normalizacja wartości slotów — zgłoszone przez prawdziwy przebieg
+
+Przebieg na dwóch PDF-ach (`corpus/History_of_the_car.pdf`,
+`corpus/When-Was-the-First-Car-Made-Exploring-the-History-of-the-Automobile.docx.pdf`,
+`mistral-small-2603`, 2026-10-02) zapisał 16 instancji i **8 odrzuceń** powodu
+`unresolved_reference`. Odrzucenie jest bezpieczne — fakt nie trafia do ontologii, a zdarzenie
+zostaje w `provenance.jsonl` — ale **połowa wartości slotów zniknęła**: tylko 4 z 12 zostały
+zapisane. Te 4 to dokładnie te wartości, których identyfikator odpowiadał istniejącej instancji
+co do znaku (`DRP_No_37435.protected_by = Karl_Benz`, `Benz_Patent.protected_by = Karl_Benz`,
+`Benz_Patent_Motor_Car_model_No_1.powered_by = gas_engine`,
+`Nicolas_Joseph_Cugnot.used_in = Fardier_à_vapeur`). Reszta rozpadła się na trzy przypadki:
+
+| wartość w slocie | wskazywa na | przykład |
+| --- | --- | --- |
+| nazwę **klasy**, nie instancji | `InternalCombustionEngine`, `Automobile` | `Model_T`, `George_Selden` |
+| **prefiks** istniejącej instancji | `Ford_Motor_Company` przy jedynej instancji `Ford_Motor_Company_Assembly_Line` | `Highland_Park_Michigan_plant` |
+| encję, której korpus nigdy nie opisuje | `military_tractor`, `steam_powered_land_vehicle` | `Fardier_à_vapeur`, `Oliver_Evans` |
+
+Trzeci przypadek **nie jest** problemem normalizacji: encji nie ma w korpusie, więc nie ma na co
+zamienić referencji, a zgadywanie instancji byłoby fabrykowaniem faktu — obecne odrzucenie jest
+właściwą odpowiedzią. Drugi przypadek jest najczystszym kandydatem: różnica to jedno słowo, a
+instancja, do której wartość pasuje, jest już w A-Boksie.
+
+Do rozstrzygnięcia zanim scenariusz trafi do `features/abox-generation.feature`:
+
+1. **Prefiks, czy osnowa?** `Ford_Motor_Company` jest poprawnym prefiksem
+   `Ford_Motor_Company_Assembly_Line`. Reguła „dopasuj, gdy jeden identyfikator jest prefiksem
+   drugiego, a ogon nie wnosi nowego słowa" jest wąska i przewidywalna, ale nie złapie
+   `Ford Motor Company` → `Ford_Motor_Company_Assembly_Line`. Dopasowanie po osnowie
+   (`_identifier` na obu) jest szersze, kosztuje więcej fałszywych trafień i zaczyna zgadywać.
+2. **Zgadywać, czy pytać model?** `onto/dedup.py` ma już dokładnie ten mechanizm dla nazw klas
+   i slotów: `closest_of` po embedderze, `verify_merge` przez LLM, a próg bierze z
+   `config.similarity_threshold` (używany w `onto/schema_gen.py:435`). Nadanie mu progu dla
+   wartości slotów byłoby spójne z trybem update, ale kosztuje dodatkowe wywołanie dla każdej
+   wiszącej wartości. KISS przemawia za regułą deterministyczną z punktu 1, bez LLM.
+3. **Slot w ogóle nie ma `range`.** W tym buildzie żaden slot nie dostał range, bo model go nie
+   podał — wszystkie pięć ma `range=None`. Bez range nie da się odróżnić „wartość ma wskazywać na
+   instancję klasy `InternalCombustionEngine`" od „wartość jest nazwą klasy", czyli przypadku
+   pierwszego z tabeli. To decyzja o schemacie, nie o wartości, i zamyka ten przypadek na
+   dłużej niż normalizacja.
+
+Propozycja scenariusza dla przypadku prefiksowego (do napisania przez autora Gherkina):
+
+```gherkin
+  Scenario: A slot value that prefixes a known instance is resolved to that instance
+    Given the LLM returns the instance "Ford Motor Company Assembly Line" of class AssemblyLine
+    And the LLM returns the instance "Highland Park Michigan plant" of class AssemblyLine
+    And the LLM gives the second instance "manufactured_by" pointing to "Ford Motor Company"
+    When the A-Box is generated
+    Then the instance Highland_Park_Michigan_plant has "manufactured_by" with the value Ford_Motor_Company_Assembly_Line
+    And no event "instance.rejected" with the reason "unresolved_reference" is recorded
+```
+
+Na przypadek pierwszy z tabeli scenariusza nie ma, dopóki punkt 3 nie zostanie rozstrzygnięty:
+dziś nie wiadomo, czy slot ma w ogóle obowiązek wskazywać na instancję.
+
 ## Uwagi
 
 - Timeout i ponowienia z `onto/llm_litellm.py` celowo nie mają scenariusza: to zachowanie
