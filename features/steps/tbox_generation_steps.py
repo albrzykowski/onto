@@ -113,6 +113,18 @@ def step_given_repeated_candidate(state: dict, count: str, name: str) -> None:
 
 @given(
     parsers.re(
+        rf"the LLM returns the class {word('klass')} and the relation {word('slot')} "
+        rf"from one chunk"
+    )
+)
+def step_given_llm_returned_class_and_relation_from_one_chunk(
+    state: dict, klass: str, slot: str
+) -> None:
+    extract_from(state, [klass], [slot])
+
+
+@given(
+    parsers.re(
         rf"a configuration with allowed_relations containing the relation {quoted('name')}"
     )
 )
@@ -225,6 +237,21 @@ def step_then_every_class_has_source_documents(state: dict) -> None:
 @then(parsers.re(r"the schema contains exactly one class (?P<name>\w+)"))
 def step_then_schema_contains_one_class(state: dict, name: str) -> None:
     assert list(classes(state)) == [name], list(classes(state))
+
+
+@then(
+    parsers.re(
+        rf'an {quoted("event")} event for {word("name")} is recorded with the chunk and '
+        rf"the excerpt"
+    )
+)
+def step_then_event_for_name_recorded_with_excerpt(
+    provenance_path: Path, event: str, name: str
+) -> None:
+    entry = event_named(provenance_path, event)
+    assert entry["id"] == name, entry
+    assert entry["source_documents"], entry
+    assert entry["source_excerpt"], entry
 
 
 @then(

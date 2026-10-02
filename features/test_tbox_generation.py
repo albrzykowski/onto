@@ -28,3 +28,8 @@ def test_schema_consolidation_over_a_large_corpus():
 @scenario("tbox-generation.feature", "A class is assigned only the slots the schema has")
 def test_a_class_is_assigned_only_the_slots_the_schema_has():
     pass
+
+
+@scenario("tbox-generation.feature", "Slot creation is logged with its source excerpt")
+def test_slot_creation_is_logged_with_its_source_excerpt():
+    pass

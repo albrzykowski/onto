@@ -17,6 +17,7 @@ SCHEMA_FILE_NAME = "schema.yaml"
 SCHEMA_NAMESPACE = "https://example.org"
 
 _MERGED = "class.merged"
+_SLOT_CREATED = "slot.created"
 _SLOT_UPDATED = "slot.updated"
 _CREATED = "class.created"
 _UPDATED = "class.updated"
@@ -306,11 +307,16 @@ def generate_tbox(
         default_range="string",
         imports=["linkml:types"],
         classes=_classes(class_sources, admitted_slots, plan, admitted, readings, log),
-        slots={
-            slot: _SlotDefinition(name=slot, annotations=_provenance(slot_sources[slot]))
-            for slot in admitted_slots
-        },
+        slots={},
     )
+    for slot in admitted_slots:
+        schema.slots[slot] = _SlotDefinition(
+            name=slot, annotations=_provenance(slot_sources[slot])
+        )
+        sources, excerpt = _reading(readings, "relation", slot)
+        log.record(
+            event=_SLOT_CREATED, id=slot, source_documents=sources, source_excerpt=excerpt
+        )
     return _write(schema, output_dir / SCHEMA_FILE_NAME)
 
 
@@ -451,6 +457,10 @@ def _add_slots(
         if known is None:
             schema.slots[name] = _SlotDefinition(
                 name=name, range=proposed, annotations=_provenance(chunk_ids)
+            )
+            sources, excerpt = _reading(readings, "relation", name)
+            log.record(
+                event=_SLOT_CREATED, id=name, source_documents=sources, source_excerpt=excerpt
             )
             continue
         _cite(known.annotations, chunk_ids)
