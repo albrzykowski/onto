@@ -133,12 +133,42 @@ gdzie `1_6_TDI` nie jest instancją. Trzeba najpierw zmienić ten scenariusz.
     Then it contains the instance "VW_Golf" of class Vehicle
     And the instance has the slot has_engine with the value "1_6_TDI"
 
-  Scenario: A slot value that names no written instance is dropped and recorded
+   Scenario: A slot value that names no written instance is dropped and recorded
     Given the LLM returns the instance "VW Golf" of class Vehicle with has_engine pointing to "1.6 TDI"
     When the A-Box is generated
     Then the instance "VW_Golf" is written
     And the instance has no slot has_engine
     And an "instance.rejected" event with the reason "unresolved_reference" is recorded for the value "1_6_TDI"
+```
+
+## `features/tbox-generation.feature` — aktualizacja klas/slotów/instancji
+
+Obecnie klasa, slot i instancja zapisywane są raz z opisem z planu (LLM widzi tylko
+nazwę klasy/slotu/instancji), a kolejne chunki z tą samą klasą/slotem/instancją
+dołączają jedynie swój ID do `source_documents`. Informacje z późniejszych chunków
+(np. nowy kontekst, inne detale) nie trafiają do opisu klasy, slotu ani instancji.
+
+```gherkin
+  Scenario: Class description is merged from multiple chunks using LLM
+    Given the LLM returns the class Vehicle from chunk#1 with description "A motorized road vehicle"
+    And the LLM returns the class Vehicle from chunk#2 with description "A car"
+    When the T-Box is generated
+    Then the class Vehicle has a description merged from both chunks
+    And an "class.updated" event is recorded with the merged description
+
+  Scenario: Slot description is merged from multiple chunks using LLM
+    Given the LLM returns the relation has_engine from chunk#1 with description "Links a vehicle to its engine"
+    And the LLM returns the relation has_engine from chunk#2 with description "The engine that powers a vehicle"
+    When the T-Box is generated
+    Then the slot has_engine has a description merged from both chunks
+    And an "slot.updated" event is recorded with the merged description
+
+  Scenario: Instance description is merged from multiple chunks using LLM
+    Given the LLM returns the instance "VW Golf" of class Vehicle from chunk#1 with description "A car made by VW"
+    And the LLM returns the instance "VW Golf" of class Vehicle from chunk#2 with description "A popular model"
+    When the A-Box is generated
+    Then the instance VW_Golf has a description merged from both chunks
+    And an "instance.updated" event is recorded with the merged description
 ```
 
 ## `features/chunking.feature`
