@@ -3,12 +3,37 @@
 Scenariusze do dopisania przez autora Gherkina. Agent ich nie pisze — `AGENTS.md`
 zabrania edycji plików `.feature`; po ich dodaniu agent przechodzi normalny cykl ATDD.
 
+---
+
+**Legenda statusów użytych w tym pliku:**
+
+- „— do decyzji” = pytanie projektowe, wymaga rozstrzygnięcia przed implementacją
+- „— wybrano opcję X” = decyzja podjęta, oczekuje na implementację
+- „— zgłoszone przez prawdziwy przebieg” = bug/obserwacja z realnego przebiegu, do potwierdzenia scenariuszem
+- brak statusu = scenariusz do dopisania przez autora Gherkina
+
+**Podsumowanie otwartych tematów:**
+
+| Sekcja | Status | Plik | Krótki opis |
+|--------|--------|------|-------------|
+| Allow-list i normalizacja nazw | Scenariusz | `tbox-generation.feature` | Casing klasy z konfiguracji |
+| Excerpt klas i slotów w schemacie | Do decyzji | `tbox-generation.feature` | Czy dodać `source_excerpt` do schematu |
+| Batchowanie w obrębie jednego dokumentu | Wybrano opcję 2 | `tbox-generation.feature` | `source_documents` nie przekracza granicy dokumentu |
+| chunk_id względny | Scenariusz | `chunking.feature` | Nazwa dokumentu względna do katalogu roboczego |
+| Normalizacja wartości slotów | Do decyzji | `abox-generation.feature` | Prefiks vs. osnowa, zgadywać vs. pytać model |
+| Prompt instancji nie zna domeny | Zgłoszone | `abox-generation.feature` | Brak domeny w prompcie instancji |
+| Adaptery w dostępie programistycznym | Do decyzji | `config-loading.feature` | Fabryka vs. scenariusz vs. nic |
+| Typowanie i publikacja | Plan 4-krokowy | `pyproject.toml` | `py.typed`, mypy, pakowanie, metadane |
+
+---
+
+
 ## `features/tbox-generation.feature`
 
 ### Allow-list i normalizacja nazw
 
 `_allowed` normalizuje nazwę z konfiguracji, a `_admit` oczekuje znormalizowanej nazwy
-kandydata. Brak scenariusza weryfikującego, że klasa dopuszczona w oryginalnym casingu
+kandydatów. Brak scenariusza, który weryfikuje, że klasa dopuszczona w oryginalnym casingu
 zostanie zapisana.
 
 ```gherkin
@@ -23,9 +48,9 @@ zostanie zapisana.
 ### Excerpt klas i slotów w schemacie — do decyzji
 
 `schema.yaml` zapisuje dla klas i slotów tylko `source_documents`, bez excerptu. Scenariusz
-poniżej chce annotacji `source_excerpt` w wygenerowanej ontologii, co stoi w sprzeczności
+poniżej zakłada annotację `source_excerpt` w wygenerowanej ontologii, co stoi w sprzeczności
 z ustalonym kierunkiem: excerpt jest dowodem w `provenance.jsonl`, a nie treścią ontologii —
-ten sam argument usunął excerpt z instancji w `cfffdfc`. Do rozstrzygnięcia, zanim scenariusz
+ten sam argument usunął `source_excerpt` z instancji w `cfffdfc`. Do rozstrzygnięcia, zanim scenariusz
 trafi do `features/tbox-generation.feature`.
 
 ```gherkin
@@ -35,40 +60,40 @@ trafi do `features/tbox-generation.feature`.
     Then every class and every slot has a "source_excerpt" annotation with the text it was derived from
 ```
 
-### Batchowanie w obrębie jednego dokumentu — wybrane
+### Batchowanie w obrębie jednego dokumentu — wybrano opcję 2
 
 `_candidates_of` w `onto/extraction.py:255` przypisuje kandydatowi **każdy chunk z jego batcha**,
 co udokumentowuje docstring `extract` (`onto/extraction.py:242-244`): model widział cały batch
-naraz, więc precyzję daje dopiero `source_excerpt`. Przy jednym temacie korpusu jest to
+na raz, więc precyzję daje dopiero `source_excerpt`. Przy jednym temacie korpusu jest to
 nieszkodliwe. Przebieg na trzech dokumentach — dwóch motoryzacyjnych i `Ukladplanetarny.pdf`
 (po polsku), `batch_size: 4`, 2026-10-02 — pokazał, że nie:
 
-- batch 1 to `History_of_the_car.pdf#c1..c3` plus `Ukladplanetarny.pdf#c1`, a batch 2 to
-  `Ukladplanetarny.pdf#c2` plus `When-Was-the-First-Car-...docx.pdf#c1`;
+- batch 1 to: `History_of_the_car.pdf#c1..c3` + `Ukladplanetarny.pdf#c1`,
+  batch 2 to: `Ukladplanetarny.pdf#c2` + `When-Was-the-First-Car-Made-...docx.pdf#c1`;
 - klasa `Planet` cytuje **wszystkie 6 chunków z 3 dokumentów**, a `Star` 4 chunki, w tym trzy
   motoryzacyjne — mimo że `source_excerpt` obu jest poprawnym polskim tekstem o Układzie
   Słonecznym.
 
 Kandydat może więc wskazać dokument, z którego nic nie pochodzi, a czytelnik logu nie ma
-jak tego rozpoznać bezzagodnić, bo wiarygodny jest tylko `source_excerpt`.
+jak tego rozpoznać bez zaglądania do treści, bo wiarygodny jest tylko `source_excerpt`.
 
-**Wybrane: 2 — `_batches` ma grupować chunky w obrębie jednego dokumentu.** Kandydat wtedy
+**Wybrano opcję 2:** `_batches` ma grupować chunki w obrębie jednego dokumentu. Kandydat wtedy
 nigdy nie wskaże obcego dokumentu, a precyzja wraca do poziomu dokumentu, co jest granicą,
 poza którą i tak nie schodzimy.
 
-Koszt do zapisania w scenariuszu: jedna dodatkowa pula żądań na dokument. Te 6 chunków dziś
-idzie w 2 batchach, po zmianie w 3 — jeden na dokument. Przy korpusie z 50 dokumentów
-liczba żądań rośnie z tyle, ile jest dokumentów, a nie z `batch_size`.
+Koszt: liczba zapytań rośnie z liczbą dokumentów, a nie z `batch_size`.
+Dziś 6 chunków idzie w 2 batchach, po zmianie w 3 — jeden na dokument. Przy korpusie z 50
+dokumentów to +~50 zapytań na build.
 
 Do rozstrzygnięcia przed implementacją: przyjęty scenariusz
-`features/tbox-generation.feature:28` („the source_documents annotation of Vehicle lists all
-3 chunks") przypina dokładnie atrybucję per-batch, a jego `Given` mówi o 3 niezależnych
-chunkach bez podania dokumentów. Agent nie edytuje plików `.feature`, więc autor Gherkina musi
+`features/tbox-generation.feature:28` ("the source_documents annotation of Vehicle lists all
+3 chunks") przypina atrybucję per-batch, a jego `Given` mówi o 3 niezależnych chunkach
+bez podania dokumentów. Agent nie edytuje plików `.feature`, więc autor Gherkina musi
 zdecydować, czy `Given` ma wskazywać 3 chunki **jednego** dokumentu — wtedy scenariusz
 przechodzi bez zmiany oczekiwania — czy 3 dokumenty, a wtedy zmienia się oczekiwanie na
 listę jednego chunka. Do rozważenia przy tej samej okazji: `features/update-mode.feature:31`
-doprecyzowuje, że `source_documents` klasy „extended with the new document", więc przy
-batchowaniu per-dokument ta scena powinna dostać swój scenariusz na łączenie chunków z różnych
+doprecyzowuje, że `source_documents` klasy jest „extended with the new document”, więc przy
+batchowaniu per-dokument ta scena powinna dostać scenariusz na łączenie chunków z różnych
 dokumentów.
 
 ## `features/chunking.feature`
@@ -77,7 +102,7 @@ dokumentów.
 że nazwa dokumentu jest względna do katalogu roboczego.
 
 ```gherkin
-  Scenario: A chunk is named after the document as the working directory names it
+  Scenario: A chunk is named using the document name as seen from the working directory
     Given a document at "corpus/article1.txt" and the working directory is the project root
     When the document is chunked
     Then the first chunk has the chunk id "corpus/article1.txt#c1"
@@ -89,13 +114,17 @@ dokumentów.
 
 Przebieg na dwóch PDF-ach (`corpus/History_of_the_car.pdf`,
 `corpus/When-Was-the-First-Car-Made-Exploring-the-History-of-the-Automobile.docx.pdf`,
-`mistral-small-2603`, 2026-10-02) zapisał 16 instancji i **8 odrzuceń** powodu
-`unresolved_reference`. Odrzucenie jest bezpieczne — fakt nie trafia do ontologii, a zdarzenie
-zostaje w `provenance.jsonl` — ale **połowa wartości slotów zniknęła**: tylko 4 z 12 zostały
-zapisane. Te 4 to dokładnie te wartości, których identyfikator odpowiadał istniejącej instancji
-co do znaku (`DRP_No_37435.protected_by = Karl_Benz`, `Benz_Patent.protected_by = Karl_Benz`,
+`mistral-small-2603`, 2026-10-02) zapisał 16 instancji i **8 odrzuceń** z powodu
+`unresolved_reference`. Odrzucenie jest bezpieczne — fakt nie trafia do ontologii,
+a zdarzenie zostaje w `provenance.jsonl` — ale **połowa wartości slotów zniknęła**:
+z 12 wartości zapisano tylko 4. Były to dokładnie te, których identyfikator odpowiadał
+istniejącej instancji co do znaku:
+`DRP_No_37435.protected_by = Karl_Benz`,
+`Benz_Patent.protected_by = Karl_Benz`,
 `Benz_Patent_Motor_Car_model_No_1.powered_by = gas_engine`,
-`Nicolas_Joseph_Cugnot.used_in = Fardier_à_vapeur`). Reszta rozpadła się na trzy przypadki:
+`Nicolas_Joseph_Cugnot.used_in = Fardier_à_vapeur`.
+
+Reszta rozpadła się na trzy przypadki:
 
 | wartość w slocie | wskazywa na | przykład |
 | --- | --- | --- |
@@ -110,45 +139,47 @@ instancja, do której wartość pasuje, jest już w A-Boksie.
 
 Do rozstrzygnięcia zanim scenariusz trafi do `features/abox-generation.feature`:
 
-1. **Prefiks, czy osnowa?** `Ford_Motor_Company` jest poprawnym prefiksem
-   `Ford_Motor_Company_Assembly_Line`. Reguła „dopasuj, gdy jeden identyfikator jest prefiksem
-   drugiego, a ogon nie wnosi nowego słowa" jest wąska i przewidywalna, ale nie złapie
-   `Ford Motor Company` → `Ford_Motor_Company_Assembly_Line`. Dopasowanie po osnowie
-   (`_identifier` na obu) jest szersze, kosztuje więcej fałszywych trafień i zaczyna zgadywać.
-2. **Zgadywać, czy pytać model?** `onto/dedup.py` ma już dokładnie ten mechanizm dla nazw klas
-   i slotów: `closest_of` po embedderze, `verify_merge` przez LLM, a próg bierze z
-   `config.similarity_threshold` (używany w `onto/schema_gen.py:435`). Nadanie mu progu dla
-   wartości slotów byłoby spójne z trybem update, ale kosztuje dodatkowe wywołanie dla każdej
-   wiszącej wartości. KISS przemawia za regułą deterministyczną z punktu 1, bez LLM.
-3. **Slot w ogóle nie ma `range`.** W tym buildzie żaden slot nie dostał range, bo model go nie
-   podał — wszystkie pięć ma `range=None`. Bez range nie da się odróżnić „wartość ma wskazywać na
-   instancję klasy `InternalCombustionEngine`" od „wartość jest nazwą klasy", czyli przypadku
-   pierwszego z tabeli. To decyzja o schemacie, nie o wartości, i zamyka ten przypadek na
-   dłużej niż normalizacja.
+1. **Prefiks czy osnowa?** `Ford_Motor_Company` jest poprawnym prefiksem
+    `Ford_Motor_Company_Assembly_Line`. Reguła „dopasuj, gdy jeden identyfikator jest prefiksem
+    drugiego, a ogon nie wnosi nowego słowa" jest wąska i przewidywalna, ale nie złapie
+    `Ford Motor Company` → `Ford_Motor_Company_Assembly_Line`. Dopasowanie po osnowie
+    (porównanie `_identifier` obu stron) jest szersze, kosztuje więcej fałszywych trafień
+    i zaczyna zgadywać.
+2. **Zgadywać czy pytać model?** `onto/dedup.py` ma już ten mechanizm dla nazw klas
+    i slotów: `closest_of` po embedderze, `verify_merge` przez LLM, a próg bierze z
+    `config.similarity_threshold` (używany w `onto/schema_gen.py:435`).
+    Nadanie mu progu dla wartości slotów byłoby spójne z trybem update,
+    ale kosztuje dodatkowe wywołanie dla każdej wiszącej wartości.
+    KISS przemawia za regułą deterministyczną z punktu 1, bez LLM.
+3. **Slot w ogóle nie ma `range`.** W tym buildzie żaden slot nie dostał `range`,
+    bo model go nie podał — wszystkie mają `range=None`. Bez `range` nie da się odróżnić
+    „wartość ma wskazywać na instancję klasy `InternalCombustionEngine`"
+    od „wartość jest nazwą klasy”, czyli przypadku pierwszego z tabeli.
+    To decyzja o schemacie, nie o wartości, i zamyka ten przypadek na dłużej niż normalizacja.
 
 Propozycja scenariusza dla przypadku prefiksowego (do napisania przez autora Gherkina):
 
 ```gherkin
-  Scenario: A slot value that prefixes a known instance is resolved to that instance
+  Scenario: A slot value that is a prefix of a known instance is resolved to that instance
     Given the LLM returns the instance "Ford Motor Company Assembly Line" of class AssemblyLine
     And the LLM returns the instance "Highland Park Michigan plant" of class AssemblyLine
-    And the LLM gives the second instance "manufactured_by" pointing to "Ford Motor Company"
+    And the LLM gives the second instance with a "manufactured_by" slot with value "Ford Motor Company"
     When the A-Box is generated
-    Then the instance Highland_Park_Michigan_plant has "manufactured_by" with the value Ford_Motor_Company_Assembly_Line
+    Then the instance Highland_Park_Michigan_plant has a "manufactured_by" slot with value Ford_Motor_Company_Assembly_Line
     And no event "instance.rejected" with the reason "unresolved_reference" is recorded
 ```
 
-Na przypadek pierwszy z tabeli scenariusza nie ma, dopóki punkt 3 nie zostanie rozstrzygnięty:
-dziś nie wiadomo, czy slot ma w ogóle obowiązek wskazywać na instancję.
+Dla pierwszego przypadku z tabeli scenariusza nie ma, dopóki punkt 3 nie zostanie rozstrzygnięty:
+dziś nie wiadomo, czy slot ma obowiązek wskazywać na instancję.
 
 ### Prompt instancji nie zna domeny — zgłoszone przez prawdziwy przebieg
 
 `onto/instance_gen.py:117` (`_prompt`) składa cztery sekcje: instrukcje, listę klas schematu,
-kontrakt wyjścia i tekst źródłowy. **Domeny nie ma wcale** — słowo `domains` nie występuje w tym
-module. Ekstrakcja klas ją ma (`_scope` w `onto/extraction.py`), i dlatego T-Box w przebiegu
-z 2026-10-02 trzymał tylko 6 klas astronomicznych: dwa dokumenty motoryzacyjne wydały zero
-kandydatów klas. Ta sama rozbieżność po stronie instancji dała 19 instancji, z czego **10
-motoryzacyjnych sklasyfikowanych jako obiekty astronomii**:
+kontrakt wyjścia i tekst źródłowy. **Domeny nie ma wcale** — słowo `domains` nie występuje
+w tym module. Ekstrakcja klas ją ma (`_scope` w `onto/extraction.py`), i dlatego T-Box
+w przebiegu z 2026-10-02 trzymał tylko 6 klas astronomicznych: dwa dokumenty motoryzacyjne
+wydały zero kandydatów klas. Ta sama rozbieżność po stronie instancji dała 19 instancji,
+z czego **10 motoryzacyjnych sklasyfikowanych jako obiekty astronomii**:
 
 | instancja | klasa |
 | --- | --- |
@@ -158,44 +189,48 @@ motoryzacyjnych sklasyfikowanych jako obiekty astronomii**:
 | `Cannstatt_Daimler` | `DwarfPlanet` |
 | `American_gasoline_automobile` | `Asteroid` |
 
-Instrukcja mówi „Use only the classes and slots listed below; invent nothing", czyli model **musi**
-wybrać jedną z 6 klas, ale nigdzie nie ma „a jeśli tekst jest spoza domen, zwróć pustą listę".
-Jedyna bramka, `not_in_tbox`, sprawdza czy klasa **istnieje**, a nie czy pasuje do domeny —
+Instrukcja mówi „Use only the classes and slots listed below; invent nothing”,
+czyli model **musi** wybrać jedną z 6 klas, ale nigdzie nie ma
+„a jeśli tekst jest spoza domeny, zwróć pustą listę”.
+Jedyna bramka, `not_in_tbox`, sprawdza, czy klasa **istnieje**, a nie czy pasuje do domeny —
 `Planet` istnieje, więc przepuszcza. Sloty tych instancji zostały odrzucone jako
 `unresolved_reference`, więc przetrwały jako puste skorupy: nazwa, klasa, opis, zero slotów.
 `not_in_tbox` zadziałał tam, gdzie model odmówił wrócić klasy spoza schematu (10 odrzuceń),
-i nie zadziałał tam, gdzie klasa istniała, lecz była bezprzedmiotowa.
+i nie zadziałał tam, gdzie klasa istniała, lecz była niezgodna z domeną.
 
-To łamie obietnicę z `AGENTS.md` wprost, tylko w drugą stronę: „An `automotive` prompt must
-never yield `Recipe`" — tutaj prompt `solar_system` wyprodukował `Model_T` jako `Planet`.
+To łamie obietnicę z `AGENTS.md` wprost, tylko w drugą stronę:
+„An `automotive` prompt must never yield `Recipe`" — tutaj prompt `solar_system` wyprodukował
+`Model_T` jako `Planet`.
 
-**Proponowana naprawa:** wstrzyknąć domenę do promptu instancji przez `_scope(config)` z
-`onto/extraction` oraz dodać regułę „tekst spoza domen → `\"instances\": []`". Bez nowej
-zależności: `instance_gen` już importuje z `extraction` (`described_by_chunk`,
-`merge_descriptions`), a `_Answer.instances` ma `default_factory=list`, więc pusta odpowiedź
-przechodzi walidację bez zmian w kodzie poza promptem.
+**Proponowana naprawa:** wstrzyknąć domenę do promptu instancji przez `_scope(config)`
+z `onto/extraction` oraz dodać regułę „tekst spoza domen → `"instances": []`”.
+Bez nowej zależności: `instance_gen` już importuje z `extraction`
+(`described_by_chunk`, `merge_descriptions`), a `_Answer.instances` ma `default_factory=list`,
+więc pusta odpowiedź przechodzi walidację bez zmian w kodzie poza promptem.
 
-Do rozstrzygnięcia przed wdrożeniem: dziedzina i prompt to dwie niezależne sprawy. Dodanie
-domeny `automotive` do `config.yaml` czyni chunky motoryzacyjne w-brzydome, ale nie uczy
-modelu, że tekst spoza domeny ma dawać pustą listę — ten sam wyciek wróci przy pierwszym
-dokumencie spoza tematu. Samo wstrzyknięcie domeny do promptu wystarczy, ale wtedy oba
-tematy w jednej ontologii nadal nie powstaną, dopóki `config.yaml` nie wymieni obu.
+Do rozstrzygnięcia przed wdrożeniem: dziedzina i prompt to dwie niezależne sprawy.
+Dodanie domeny `automotive` do `config.yaml` czyni chunki motoryzacyjne w obrębie domen,
+ale nie uczy modelu, że tekst spoza domeny ma dawać pustą listę — ten sam wyciek
+wróci przy pierwszym dokumencie spoza tematu. Samo wstrzyknięcie domeny do promptu
+wystarczy, ale wtedy oba tematy w jednej ontologii nadal nie powstaną,
+dopóki `config.yaml` nie wymieni obu.
 
 Propozycja scenariusza (do napisania przez autora Gherkina):
 
 ```gherkin
   Scenario: A chunk outside the configured domains yields no instances
     Given a configuration with the domain "solar_system" describing the Solar System
-    And a chunk of a document about the history of the car
-    And the LLM is asked for instances of the class Vehicle
+    And a chunk from a document about the history of the car
+    And the LLM is asked for instances
     When the A-Box is generated
     Then no instance is created
     And the instance "Model T" is not written
 ```
 
-Do rozważenia przy tej samej okazji: czy pusta odpowiedź ma być zdarzeniem (`chunk.rejected`
-albo `instance.rejected` bez `id`), czy ma być ciszą. Dziś jest ciszą, a z logu nie da się
-odsadzić „ten chunk nie dotyczył domeny" od „model nic nie znalazł".
+Do rozważenia przy tej samej okazji: czy pusta odpowiedź ma być zdarzeniem
+(`chunk.rejected` albo `instance.rejected` bez `id`), czy ma być ciszą.
+Dziś jest ciszą, a z logu nie da się odróżnić „ten chunk nie dotyczył domeny”
+od „model nic nie znalazł”.
 
 ## Uwagi
 
@@ -215,11 +250,11 @@ llm = LiteLLMLLM(api_key=config.api_key)
 build(input_dir=Path("corpus"), output_dir=Path("ontology"), config=config, llm=llm)
 ```
 
-To dokładnie drift, który zgłosiło `157de4f`: przykład zbudował `MistralLLM()` bez klucza,
+To dokładnie ten drift, który zgłosiło `157de4f`: przykład zbudował `MistralLLM()` bez klucza,
 CLI przekazał `api_key=config.api_key`, żądanie wyszło bez poświadczeń, a Mistral odpowiedział
 `Invalid API Key` — tak samo jak zły klucz i jak klucz właśnie rotowany. `a54c057` poprawił
 przykład, ale nic nie pilnuje, żeby znowu się nie rozjechał. Ochronna notatka w README
-(`Pass api_key=config.api_key to the adapter.`) jest tylko tekstem; jedyne, co jest przypięte,
+(„Pass `api_key=config.api_key` to the adapter.”) jest tylko tekstem; jedyne, co jest przypięte,
 to ścieżka CLI.
 
 Trzy możliwości, żeby zamknąć:
@@ -253,8 +288,7 @@ Przeprowadzone pomiary, na których plan opiera się (stan na 2026-10-02):
   158 z nich to `state: dict`, czyli stan współdzielony pytest-bdd, z natury `Any`.
 - Nie ma żadnego `type: ignore` w repozytorium.
 - `python_version = "3.11"` przy venvie na 3.12.14 — świadome i poprawne, zostawić.
-- `LICENSE` to MIT, © 2026 Leszek Albrzykowski. **Pliku nie wolno zmieniać** — tylko
-  wskazywać go z `pyproject.toml`.
+- `LICENSE` to MIT. **Pliku nie wolno zmieniać** — tylko wskazywać go z `pyproject.toml`.
 - W historii git nie ma sekretów: 0 wartości `sk-` dłuższych niż 20 znaków,
   `config.yaml` nigdy nie był śledzony.
 - `py.typed` nie ma, więc konsument nie dostaje żadnych typów.
@@ -327,29 +361,14 @@ i użyć formy SPDX; dokładne minimum do potwierdzenia przy wdrożeniu, nie z p
 
 ### Otwarte pytania
 
-1. **Zakres:** kroki 1–3, czy dokładnie te plus krok 4? Rekomendacja: kroki 1–4 i jedna
-   linia `opencode.json` do `.gitignore`, bo `opencode.json` jest nieśledzony i nie jest
-   zignorowany, więc w publicznym repozytorium wisi jako obcy plik.
-2. **Autor do publikacji:** imię i nazwisko oraz e-mail, które mają trafić do
-   `authors`. `LICENSE` mówi „Leszek Albrzykowski", ale pakiet nazywa się
-   `onto-builder`, a repozytorium `albrzykowski/onto` — decyzja należy do właściciela.
-3. **Klasyfikatory:** czy ma być `License :: OSI Approved :: MIT License` obok pola
-   `license`, czy samo pole.
-4. **CI:** brak `.github/`. Warto dodać przepłyg na trzy udokumentowane kontrole
-   (`pytest`, `ruff`, `mypy`), ale dopiero po krokach 1–4. Uwaga: `LD_LIBRARY_PATH`
-   z `AGENTS.md` to obejście NixOS-a i nie może trafić do publicznego przepływu.
+1. **Zakres:** kroki 1–3 czy też krok 4? Rekomendacja: kroki 1–4 oraz dodanie
+    `opencode.json` do `.gitignore`, bo plik jest nieśledzony i nie jest zignorowany,
+    więc w publicznym repozytorium wisi jako obcy plik.
+2. **Autor do publikacji:** imię, nazwisko oraz e-mail do pola `authors`. Pakiet nazywa się
+    `onto-builder`, a repozytorium `albrzykowski/onto` — decyzja należy do właściciela.
+3. **Klasyfikatory:** czy dodać `License :: OSI Approved :: MIT License` obok pola `license`,
+    czy wystarczy samo pole.
+4. **CI:** brak `.github/`. Warto dodać przepływ na trzy kontrole (`pytest`, `ruff`, `mypy`),
+    ale dopiero po krokach 1–4. Uwaga: `LD_LIBRARY_PATH` z `AGENTS.md` to obejście
+    specyficzne dla NixOS-a i nie może trafić do publicznego przepływu.
 
--------------------------------------- DODANE PRZEZ UŻYTKOWNIKA -----------------------
-
-Zadanie 1:
-
-Poprawki w README.md:
-
-- W README.md jest konfiguracja dla NiXOS, to niedopuszczalne. Opis musi byc krosssystemowy. 
-- Paragraf: "Measured on litellm 1.103.1: (...) " - do usuniecia
-- Mowa jest o adapterach ale nie ma wytłumaczenia co to jest.
-- config.yaml w README powinien być z komentarzami takimi jak w config.example.yaml
-- Sprawdż aktualonośc pliku
-- Sprawdź logiczną spójność
-- Poziom angielskiego B1/B2
-- Odbiorcami mogą być DataScietnist a nie programiści, nie może być zbyt skomplikowany technicznie 
