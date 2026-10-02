@@ -24,17 +24,17 @@ Feature: Adapter wiring
 
 ## `features/llm-extraction.feature`
 
-`max_tokens` może uciąć odpowiedź modelu, a `read_json` zwraca surowy tekst zamiast błędu.
-Brak scenariusza rozróżniającego ucięcie od błędnego JSON-a.
+`read_json` zwraca surowy tekst, jeśli model nie zwróci poprawnego JSON-a (np. przez
+`finish_reason: "length"` albo błąd serializacji). Brak scenariusza, który rozróżnia
+przyczynę błędu i odpowiednio go klasyfikuje.
 
 ```gherkin
-  Scenario: A reply cut off at the token limit is not taken for an answer
+  Scenario: A reply that is not valid JSON is not taken for an answer
     Given a document chunk about vehicle engines
-    And the model is given max_tokens of 64
-    And the model replies with the class "Engine" and stops at the token limit
+    And the model replies with a truncated or malformed JSON
     When extraction runs for that chunk
-    Then an error names the chunk as cut off
-    And the truncated reply is not parsed as concepts
+    Then an error names the chunk as having an invalid reply
+    And the reply is not parsed as concepts
 ```
 
 ## `features/tbox-generation.feature`
