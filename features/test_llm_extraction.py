@@ -35,3 +35,8 @@ def test_batching_llm_calls():
 @scenario("llm-extraction.feature", "An LLM error for one chunk does not abort the build")
 def test_an_llm_error_for_one_chunk_does_not_abort_the_build():
     pass
+
+
+@scenario("llm-extraction.feature", "A reply that is not valid JSON is not taken for an answer")
+def test_a_reply_that_is_not_valid_json_is_not_taken_for_an_answer():
+    pass

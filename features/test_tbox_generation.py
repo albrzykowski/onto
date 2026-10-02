@@ -23,3 +23,8 @@ def test_classes_carry_descriptions_and_provenance():
 @scenario("tbox-generation.feature", "Schema consolidation over a large corpus")
 def test_schema_consolidation_over_a_large_corpus():
     pass
+
+
+@scenario("tbox-generation.feature", "A class is assigned only the slots the schema has")
+def test_a_class_is_assigned_only_the_slots_the_schema_has():
+    pass

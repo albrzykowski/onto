@@ -7,12 +7,14 @@ definitions of one step text would leave pytest-bdd to pick a winner.
 """
 
 import json
+import logging
 import math
 import re
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
+import pytest
 import yaml
 from pytest_bdd import when
 
@@ -84,6 +86,25 @@ def log_events(provenance_path: Path) -> list[dict]:
 
 def event_names(provenance_path: Path) -> list[str]:
     return [event["event"] for event in log_events(provenance_path)]
+
+
+def event_named(provenance_path: Path, event: str) -> dict:
+    """The one event of that kind, so a scenario can read the fields it was written with."""
+    events = log_events(provenance_path) if provenance_path.exists() else []
+    assert event in [entry["event"] for entry in events], [entry["event"] for entry in events]
+    return next(entry for entry in events if entry["event"] == event)
+
+
+def error_messages(caplog: pytest.LogCaptureFixture) -> list[str]:
+    """The errors a run logged, because the scenarios read the failure rather than a raise."""
+    return [record.getMessage() for record in caplog.records if record.levelno == logging.ERROR]
+
+
+def config_for(state: dict) -> BuilderConfig:
+    """The configuration a scenario built up, so a step does not have to seed it first."""
+    if state["config"] is None:
+        state["config"] = valid_config()
+    return state["config"]
 
 
 class FakeLLM:
@@ -251,7 +272,7 @@ def update_client(state: dict) -> FakeLLM:
             {
                 "instances": [
                     {
-                        "name": "VW Passat",
+                        "name": state["instance_name"],
                         "class": state["instances_class"],
                         "slots": {},
                         "excerpt": EXCERPT,
@@ -281,6 +302,7 @@ def step_when_update_mode_runs(state: dict, workdir: Path, output_dir: Path) -> 
     state.setdefault("class_names", [])
     state.setdefault("planned_classes", state["class_names"])
     state.setdefault("instances_class", EXISTING_CLASS)
+    state.setdefault("instance_name", "VW Passat")
     state["before"] = ontology_as_written(output_dir)
     state["client"] = update_client(state)
     builder.build(

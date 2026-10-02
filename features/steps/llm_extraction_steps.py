@@ -1,14 +1,20 @@
 import json
-import logging
 import re
 from pathlib import Path
 
 import pytest
 from pytest_bdd import given, parsers, then, when
 
-from features.steps.support import FakeLLM, described, quoted, split_names, valid_config
+from features.steps.support import (
+    FakeLLM,
+    config_for,
+    described,
+    error_messages,
+    quoted,
+    split_names,
+    valid_config,
+)
 from onto.chunking import Chunk, chunk_document
-from onto.config import BuilderConfig
 from onto.extraction import extract
 from onto.ingestion import Document, compute_fingerprint
 from onto.llm import LLMError
@@ -42,12 +48,6 @@ def make_chunk(number: int, text: str) -> Chunk:
     path = Path(f"corpus/article{number}.txt")
     document = Document(path=path, text=text, fingerprint=compute_fingerprint(text))
     return chunk_document(document, valid_config())[0]
-
-
-def config_for(state: dict) -> BuilderConfig:
-    if state["config"] is None:
-        state["config"] = valid_config()
-    return state["config"]
 
 
 def current_text(state: dict) -> str:
@@ -108,6 +108,11 @@ def step_given_chunk_with_text(state: dict, text: str) -> None:
     state["chunks"].append(make_chunk(1, text))
 
 
+@given("a document chunk about vehicle engines")
+def step_given_document_chunk_about_vehicle_engines(state: dict) -> None:
+    state["chunks"].append(make_chunk(1, DEFAULT_CHUNK_TEXT))
+
+
 @given("a chunk in Polish containing domain concepts")
 def step_given_chunk_in_polish(state: dict) -> None:
     state["chunks"].append(make_chunk(1, POLISH_CHUNK_TEXT))
@@ -133,6 +138,11 @@ def step_given_llm_returns_english_names(state: dict) -> None:
 @given("the LLM fails for the first chunk")
 def step_given_llm_fails_for_first_chunk(state: dict) -> None:
     state["failing_call"] = 0
+
+
+@given("the model replies with a truncated or malformed JSON")
+def step_given_model_replies_with_malformed_json(state: dict) -> None:
+    state["reply"] = '{"classes": [{"name": "Vehicle", "exce'
 
 
 # Given: configuration
@@ -188,6 +198,11 @@ def step_when_extraction_is_performed(state: dict) -> None:
 
 @when("extraction is performed")
 def step_when_extraction_is_performed_without_a_target(state: dict) -> None:
+    perform_extraction(state)
+
+
+@when("extraction runs for that chunk")
+def step_when_extraction_runs_for_that_chunk(state: dict) -> None:
     perform_extraction(state)
 
 
@@ -333,6 +348,21 @@ def step_then_result_contains_second_chunk(state: dict) -> None:
 def step_then_error_logged_for_first_chunk(
     state: dict, caplog: pytest.LogCaptureFixture
 ) -> None:
-    errors = [record.getMessage() for record in caplog.records if record.levelno == logging.ERROR]
+    expected = state["chunks"][0].chunk_id
+    assert any(expected in message for message in error_messages(caplog)), (
+        f"no error about {expected}: {error_messages(caplog)}"
+    )
+
+
+@then("an error names the chunk as having an invalid reply")
+def step_then_error_names_chunk_as_having_an_invalid_reply(
+    state: dict, caplog: pytest.LogCaptureFixture
+) -> None:
+    errors = error_messages(caplog)
     expected = state["chunks"][0].chunk_id
     assert any(expected in message for message in errors), f"no error about {expected}: {errors}"
+
+
+@then("the reply is not parsed as concepts")
+def step_then_reply_is_not_parsed_as_concepts(state: dict) -> None:
+    assert state["candidates"] == [], state["candidates"]

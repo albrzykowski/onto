@@ -37,8 +37,3 @@ def test_a_written_instance_is_recorded():
 @scenario("abox-generation.feature", "An instance the corpus names again is extended, not restated")
 def test_an_instance_the_corpus_names_again_is_extended_not_restated():
     pass
-
-
-@scenario("abox-generation.feature", "Two wordings of one id do not overwrite each other")
-def test_two_wordings_of_one_id_do_not_overwrite_each_other():
-    pass

@@ -6,7 +6,18 @@ from linkml.validator import Validator
 from linkml.validator.plugins import JsonschemaValidationPlugin
 from pytest_bdd import given, parsers, then, when
 
-from features.steps.support import FakeLLM, event_names, quoted, valid_config, word
+from features.steps.support import (
+    FakeLLM,
+    event_named,
+    event_names,
+    existing_instances,
+    quoted,
+    read_yaml,
+    valid_config,
+    word,
+    write_document,
+    write_yaml,
+)
 from features.steps.tbox_generation_steps import extract_from
 from features.steps.tbox_generation_steps import generate as generate_tbox
 from onto.chunking import Chunk, chunk_document
@@ -17,6 +28,8 @@ from onto.provenance import ProvenanceLog
 CHUNK_TEXT = "The Golf is produced by VW and has a 1.6 TDI engine"
 EXCERPT = "The Golf is produced by VW and has a 1.6 TDI engine"
 CHUNK = "corpus/article1.txt#c1"
+NEW_DOCUMENT = "new.txt"
+NEW_TEXT = "The Golf is sold with the 1.6 TDI engine and a manual gearbox."
 
 
 def make_chunk() -> Chunk:
@@ -28,10 +41,21 @@ def make_chunk() -> Chunk:
     return chunk_document(document, valid_config())[0]
 
 
-def instance_reply(name: str, klass: str, slots: dict[str, str]) -> str:
+def instance_reply(*instances: tuple[str, str, dict[str, str]]) -> str:
     return json.dumps(
-        {"instances": [{"name": name, "class": klass, "slots": slots, "excerpt": EXCERPT}]}
+        {
+            "instances": [
+                {"name": name, "class": klass, "slots": slots, "excerpt": EXCERPT}
+                for name, klass, slots in instances
+            ]
+        }
     )
+
+
+def remember(state: dict, *instances: tuple[str, str, dict[str, str]]) -> None:
+    """A scenario states what the model returns one instance at a time, so each step adds
+    to the answer instead of replacing the one before it."""
+    state.setdefault("instances", []).extend(instances)
 
 
 def tbox_of(
@@ -49,7 +73,7 @@ def tbox_of(
 
 def client_for(state: dict) -> FakeLLM:
     def respond(_call: int) -> str:
-        return state["reply"]
+        return instance_reply(*state["instances"])
 
     return FakeLLM(respond)
 
@@ -70,6 +94,12 @@ def entries(state: dict) -> dict:
     return state["document"]["instances"]
 
 
+def written_instances(output_dir: Path) -> dict:
+    """The A-Box as it stands on disk, for the scenarios an update wrote rather than a When
+    step of this module."""
+    return read_yaml(output_dir / INSTANCES_FILE_NAME)["instances"]
+
+
 def validate(state: dict) -> None:
     """LinkML's own jsonschema plugin, one entry at a time: the file is keyed by instance
     id, so the class an entry must conform to is the one that entry declares."""
@@ -84,6 +114,25 @@ def validate(state: dict) -> None:
 
 
 # Given: the T-Box and what the model returns
+
+@given(
+    parsers.re(
+        rf"a generated T-Box with the classes {word('first')} and {word('second')} "
+        rf"and the slot {word('slot')}"
+    )
+)
+def step_given_generated_tbox_with_two_classes(
+    state: dict, output_dir: Path, provenance_path: Path, first: str, second: str, slot: str
+) -> None:
+    tbox_of(state, output_dir, provenance_path, [first, second], [slot])
+
+
+@given(parsers.re(rf"a generated T-Box with the class {word('klass')}\s*$"))
+def step_given_generated_tbox_with_class(
+    state: dict, output_dir: Path, provenance_path: Path, klass: str
+) -> None:
+    tbox_of(state, output_dir, provenance_path, [klass], [])
+
 
 @given(
     parsers.re(
@@ -105,7 +154,45 @@ def step_given_generated_tbox_with_class_and_slot(
 def step_given_llm_returns_instance_with_slot(
     state: dict, name: str, klass: str, slot: str, value: str
 ) -> None:
-    state["reply"] = instance_reply(name, klass, {slot: value})
+    remember(state, (name, klass, {slot: value}))
+
+
+@given(
+    parsers.re(rf"the LLM returns the instance {quoted('name')} of class {word('klass')}\s*$")
+)
+def step_given_llm_returns_instance(state: dict, name: str, klass: str) -> None:
+    remember(state, (name, klass, {}))
+
+
+@given(
+    parsers.re(
+        rf"the LLM returns the instance {quoted('name')} of class {word('klass')} "
+        rf"with no slot values\s*$"
+    )
+)
+def step_given_llm_returns_instance_without_slots(state: dict, name: str, klass: str) -> None:
+    """An update is answered by the double in support.py, which reads the state this step
+    fills rather than a whole reply."""
+    state["instance_name"] = name
+    state["instances_class"] = klass
+
+
+@given(
+    parsers.re(
+        rf"an existing A-Box in which {word('name')} has the slot {word('slot')} "
+        rf"with the value {quoted('value')}"
+    )
+)
+def step_given_existing_abox_with_slot(
+    workdir: Path, output_dir: Path, name: str, slot: str, value: str
+) -> None:
+    """The A-Box the previous build wrote, plus the document the update is about to read:
+    both are the world an update runs against, and neither is stated by another step of this
+    feature."""
+    previous = existing_instances()["instances"]
+    assert name in previous and previous[name][slot] == value, previous
+    write_yaml(output_dir / INSTANCES_FILE_NAME, existing_instances())
+    write_document(workdir, NEW_DOCUMENT, NEW_TEXT)
 
 
 @given(
@@ -117,13 +204,13 @@ def step_given_llm_returns_instance_outside_the_tbox(
     state: dict, output_dir: Path, provenance_path: Path, klass: str
 ) -> None:
     tbox_of(state, output_dir, provenance_path, ["Vehicle"], ["has_engine"])
-    state["reply"] = instance_reply("Mystery Thing", klass, {})
+    remember(state, ("Mystery Thing", klass, {}))
 
 
 @given(parsers.re(r"a generated A-Box(?: and its T-Box)?"))
 def step_given_generated_abox(state: dict, output_dir: Path, provenance_path: Path) -> None:
     tbox_of(state, output_dir, provenance_path, ["Vehicle"], ["has_engine"])
-    state["reply"] = instance_reply("VW Golf", "Vehicle", {"has_engine": "1.6 TDI"})
+    remember(state, ("VW Golf", "Vehicle", {"has_engine": "1.6 TDI"}))
     build(state, provenance_path)
 
 
@@ -198,3 +285,44 @@ def step_then_every_instance_carries_provenance(state: dict) -> None:
     for name, entry in entries(state).items():
         annotations = entry["annotations"]
         assert annotations["source_documents"]["value"] == [CHUNK], name
+
+
+@then(
+    parsers.re(
+        rf'an {quoted("event")} event for {word("name")} is recorded with the chunk and '
+        rf"the excerpt in the provenance log"
+    )
+)
+def step_then_event_with_excerpt_for_instance_recorded(
+    provenance_path: Path, event: str, name: str
+) -> None:
+    entry = event_named(provenance_path, event)
+    assert entry["id"] == name, entry
+    assert entry["source_documents"], entry
+    assert entry["source_excerpt"], entry
+
+
+# Then: an instance an update extended
+
+@then(
+    parsers.re(
+        rf"the instance {word('name')} still has the slot {word('slot')} with the "
+        rf"value {quoted('value')}"
+    )
+)
+def step_then_instance_still_has_slot_with_value(
+    output_dir: Path, name: str, slot: str, value: str
+) -> None:
+    entry = written_instances(output_dir)[name]
+    assert entry[slot] == value, entry
+
+
+@then("its source_documents annotation cites the new document")
+def step_then_source_documents_cite_the_new_document(output_dir: Path) -> None:
+    cited = written_instances(output_dir)["VW_Golf"]["annotations"]["source_documents"]["value"]
+    assert f"corpus/{NEW_DOCUMENT}#c1" in cited, cited
+
+
+@then(parsers.re(rf'an {quoted("event")} event for {word("name")} is recorded\s*$'))
+def step_then_event_for_instance_recorded(provenance_path: Path, event: str, name: str) -> None:
+    assert event_named(provenance_path, event)["id"] == name

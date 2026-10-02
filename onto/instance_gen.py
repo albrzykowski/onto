@@ -1,4 +1,5 @@
 import logging
+import re
 from pathlib import Path
 from typing import Any
 
@@ -83,8 +84,10 @@ class _Answer(BaseModel):
 
 
 def _identifier(name: str) -> str:
-    """An instance, and every value pointing at one, is written as a single token."""
-    return "_".join(name.split())
+    """An instance, and every value pointing at one, is written as a single token of word
+    characters. The model spells identifiers in prose, so `1.6 TDI` and `VW Golf` have to
+    name the same instance in the A-Box, in a slot value and in the log."""
+    return "_".join(re.findall(r"\w+", name))
 
 
 def _classes_of(schema_path: Path) -> dict[str, list[str]]:

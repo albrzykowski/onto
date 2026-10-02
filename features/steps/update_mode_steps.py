@@ -8,10 +8,10 @@ from features.steps.support import (
     EXISTING_CLASS,
     EXISTING_INSTANCE,
     MERGE_MARKER,
+    event_named,
     existing_instances,
     existing_schema,
     input_dir,
-    log_events,
     ontology_as_written,
     quoted,
     read_yaml,
@@ -44,12 +44,6 @@ def read_json(path: Path) -> dict:
 
 def cited_chunks(schema_path: Path, klass: str) -> list[str]:
     return read_yaml(schema_path)["classes"][klass]["annotations"]["source_documents"]["value"]
-
-
-def event_named(provenance_path: Path, event: str) -> dict:
-    events = log_events(provenance_path) if provenance_path.exists() else []
-    assert event in [entry["event"] for entry in events], [entry["event"] for entry in events]
-    return next(entry for entry in events if entry["event"] == event)
 
 
 def provenance_mentioning(state: dict, first: str, second: str) -> list[str]:

@@ -49,3 +49,10 @@ Feature: Extracting concepts with the LLM
     When extraction is performed
     Then the result contains candidates from the second chunk
     And an error for the first chunk is logged
+
+  Scenario: A reply that is not valid JSON is not taken for an answer
+    Given a document chunk about vehicle engines
+    And the model replies with a truncated or malformed JSON
+    When extraction runs for that chunk
+    Then an error names the chunk as having an invalid reply
+    And the reply is not parsed as concepts

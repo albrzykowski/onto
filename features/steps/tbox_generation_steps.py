@@ -1,11 +1,20 @@
 import json
+import re
 from pathlib import Path
 
 import yaml
 from linkml.linter.linter import Linter
 from pytest_bdd import given, parsers, then, when
 
-from features.steps.support import FakeLLM, quoted, split_names, valid_config, word
+from features.steps.support import (
+    FakeLLM,
+    config_for,
+    described,
+    event_named,
+    quoted,
+    split_names,
+    word,
+)
 from onto.extraction import Candidate, CandidateKind
 from onto.provenance import ProvenanceLog, SourceRef
 from onto.schema_gen import generate_tbox
@@ -24,7 +33,7 @@ def candidate(kind: CandidateKind, name: str, chunk_id: str = DEFAULT_CHUNK) -> 
     )
 
 
-def described(name: str) -> str:
+def only_description(name: str) -> str:
     """The only description the LLM ever gave for a class, so the schema's text is
     checkable against the model's reply rather than merely against being non-empty."""
     return f"A {name} as described by the language model."
@@ -37,7 +46,7 @@ def plan_reply(class_names: list[str], slot_names: list[str]) -> str:
         {
             "classes": {
                 name: {
-                    "description": described(name),
+                    "description": only_description(name),
                     "slots": slot_names if index == 0 else [],
                 }
                 for index, name in enumerate(class_names)
@@ -63,7 +72,7 @@ def client_for(state: dict) -> FakeLLM:
 
 def generate(state: dict, output_dir: Path, log: ProvenanceLog) -> None:
     state["schema_path"] = generate_tbox(
-        state["candidates"], valid_config(), client_for(state), output_dir, log
+        state["candidates"], config_for(state), client_for(state), output_dir, log
     )
     state["document"] = yaml.safe_load(state["schema_path"].read_text(encoding="utf-8"))
 
@@ -100,6 +109,25 @@ def step_given_repeated_candidate(state: dict, count: str, name: str) -> None:
         for number in range(1, int(count) + 1)
     ]
     state["reply"] = plan_reply([name], [])
+
+
+@given(
+    parsers.re(
+        rf"a configuration with allowed_relations containing the relation {quoted('name')}"
+    )
+)
+def step_given_configuration_with_allowed_relation(state: dict, name: str) -> None:
+    config_for(state).allowed_relations = described(f'{name} as "stated by the configuration"')
+
+
+@given(
+    parsers.re(
+        rf"the LLM has returned the class candidate {quoted('name')} and the relations "
+        rf"(?P<relations>\"[^\"]+\"(?:\s*,\s*\"[^\"]+\")*)\s*$"
+    )
+)
+def step_given_llm_returned_one_class_candidate(state: dict, name: str, relations: str) -> None:
+    extract_from(state, [name], re.findall(r'"([^"]+)"', relations))
 
 
 @given("a generated T-Box")
@@ -147,9 +175,29 @@ def step_then_contains_class_definitions(state: dict, names: str) -> None:
         assert name in found, f"{name} missing from {found}"
 
 
-@then(parsers.re(rf'the class {word("name")} has the slot {quoted("slot")}'))
+@then(parsers.re(rf'the class {word("name")} has the slot {quoted("slot")}\s*$'))
 def step_then_class_has_slot(state: dict, name: str, slot: str) -> None:
     assert slot in classes(state)[name]["slots"], classes(state)[name]["slots"]
+
+
+@then(parsers.re(rf"the class {word('name')} has the slot {quoted('slot')} only\s*$"))
+def step_then_class_has_slot_only(state: dict, name: str, slot: str) -> None:
+    assigned = classes(state)[name]["slots"]
+    assert assigned == [slot], assigned
+
+
+@then(
+    parsers.re(
+        rf'a {quoted("event")} event with the reason {quoted("reason")} is recorded '
+        rf"for {word('name')}\s*$"
+    )
+)
+def step_then_rejection_recorded_for(
+    provenance_path: Path, event: str, reason: str, name: str
+) -> None:
+    entry = event_named(provenance_path, event)
+    assert entry["reason"] == reason, entry
+    assert entry["id"] == name, entry
 
 
 @then("it passes linkml validation without errors")
@@ -162,7 +210,7 @@ def step_then_passes_linkml_validation(state: dict) -> None:
 @then('every class has a "description" provided by the LLM')
 def step_then_every_class_has_a_description(state: dict) -> None:
     for name, definition in classes(state).items():
-        assert definition["description"] == described(name), definition
+        assert definition["description"] == only_description(name), definition
 
 
 @then('every class has a "source_documents" annotation pointing to its source document')
