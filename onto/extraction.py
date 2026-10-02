@@ -29,9 +29,13 @@ Rules:
 concept came from.
 - Skip what the text merely assumes, mentions in passing, or is about outside the domain.
 
-Answer with a single JSON object and nothing else:
-{"classes": [{"name": ..., "description": ..., "excerpt": ...}], \
-"relations": [{"name": ..., "description": ..., "excerpt": ...}]}"""
+Answer with a single JSON object and nothing else. Every value is a string in double quotes,
+and every name, description and excerpt is taken from the source text — never copied from the
+example below, which only shows the shape:
+{"classes": [{"name": "Engine", "description": "A machine that turns heat into motion.",
+"excerpt": "The engine turns heat into motion."}],
+"relations": [{"name": "part_of", "description": "Relates a component to the whole it belongs to.",
+"excerpt": "The engine is part of the car."}]}"""
 
 
 def _output_contract(config: BuilderConfig) -> str:
@@ -173,7 +177,7 @@ class _Merged(BaseModel):
     descriptions: dict[str, str] = Field(default_factory=dict)
 
 
-def _merge_prompt(subject: str, listing: list[str]) -> str:
+def _merge_prompt(subject: str, listing: list[str], example: str) -> str:
     return "\n\n".join(
         [
             f"You are an ontology engineer. Several descriptions of the same {subject} were"
@@ -181,8 +185,9 @@ def _merge_prompt(subject: str, listing: list[str]) -> str:
             " covers every version given, in English, in a single sentence. Do not invent"
             " what no version states, and keep the name as it is written.",
             "\n".join(f"- {line}" for line in listing),
-            'Answer with a single JSON object and nothing else:'
-            ' {"descriptions": {"<name>": <one sentence>}}',
+            "Answer with a single JSON object and nothing else, one entry per name listed"
+            " above, with every value a string in double quotes and none of them copied from"
+            ' the example below: {"descriptions": {"' + example + '": "..."}}',
         ]
     )
 
@@ -208,7 +213,9 @@ def merge_descriptions(
         listing = [f"- {name}: {' | '.join(described[name])}" for name in names]
         reply = llm.complete(
             CompletionRequest(
-                model=config.model, prompt=_merge_prompt(subject, listing), max_tokens=_MAX_TOKENS
+                model=config.model,
+                prompt=_merge_prompt(subject, listing, names[0]),
+                max_tokens=_MAX_TOKENS,
             )
         )
         merged.update(_Merged.model_validate_json(read_json(reply)).descriptions)

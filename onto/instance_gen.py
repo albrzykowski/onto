@@ -37,9 +37,12 @@ list, even when the text names several things for it; keep the most significant 
 - Copy the excerpt verbatim from the source text; it is the only proof of where the \
 instance came from.
 
-Answer with a single JSON object and nothing else:
-{"instances": [{"name": ..., "class": ..., "slots": {...}, "description": ..., \
-"excerpt": ...}]}"""
+Answer with a single JSON object and nothing else. Every value is a string in double quotes,
+and every class and slot name is one of those listed above — never copied from the example
+below, which only shows the shape:
+{"instances": [{"name": "Engine No 1", "class": "Engine", "slots": {"part_of": "Chassis"},
+"description": "The first engine the text describes.",
+"excerpt": "Engine No 1 was the first engine the text describes."}]}"""
 
 
 def _output_contract(config: BuilderConfig) -> str:
