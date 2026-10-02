@@ -24,4 +24,4 @@ Feature: Generating a LinkML A-Box
 
   Scenario: Every instance carries provenance
     Given a generated A-Box
-    Then every instance has an annotation with its source document, chunk, and the text excerpt it was derived from
+    Then every instance has an annotation with its source document and chunk

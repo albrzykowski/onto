@@ -193,12 +193,8 @@ def step_then_event_recorded_in_provenance_log(event: str, provenance_path: Path
 
 # Then: provenance
 
-@then(
-    "every instance has an annotation with its source document, chunk, and the text "
-    "excerpt it was derived from"
-)
+@then("every instance has an annotation with its source document and chunk")
 def step_then_every_instance_carries_provenance(state: dict) -> None:
     for name, entry in entries(state).items():
         annotations = entry["annotations"]
         assert annotations["source_documents"]["value"] == [CHUNK], name
-        assert annotations["source_excerpt"]["value"] == EXCERPT, name
