@@ -33,3 +33,13 @@ def test_a_class_is_assigned_only_the_slots_the_schema_has():
 @scenario("tbox-generation.feature", "Slot creation is logged with its source excerpt")
 def test_slot_creation_is_logged_with_its_source_excerpt():
     pass
+
+
+@scenario("tbox-generation.feature", "Class description is merged from multiple chunks using LLM")
+def test_class_description_is_merged_from_multiple_chunks_using_llm():
+    pass
+
+
+@scenario("tbox-generation.feature", "Slot description is merged from multiple chunks using LLM")
+def test_slot_description_is_merged_from_multiple_chunks_using_llm():
+    pass

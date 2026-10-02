@@ -1,5 +1,6 @@
 import json
 from pathlib import Path
+from typing import Any
 
 import yaml
 from linkml.validator import Validator
@@ -11,6 +12,7 @@ from features.steps.support import (
     event_named,
     event_names,
     existing_instances,
+    merged_description,
     quoted,
     read_yaml,
     valid_config,
@@ -22,7 +24,7 @@ from features.steps.tbox_generation_steps import extract_from
 from features.steps.tbox_generation_steps import generate as generate_tbox
 from onto.chunking import Chunk, chunk_document
 from onto.ingestion import Document, compute_fingerprint
-from onto.instance_gen import INSTANCES_FILE_NAME, generate_abox
+from onto.instance_gen import INSTANCES_FILE_NAME, _identifier, generate_abox
 from onto.provenance import ProvenanceLog
 
 CHUNK_TEXT = "The Golf is produced by VW and has a 1.6 TDI engine"
@@ -32,9 +34,9 @@ NEW_DOCUMENT = "new.txt"
 NEW_TEXT = "The Golf is sold with the 1.6 TDI engine and a manual gearbox."
 
 
-def make_chunk() -> Chunk:
+def make_chunk(chunk_id: str = CHUNK) -> Chunk:
     document = Document(
-        path=Path(CHUNK.rpartition("#")[0]),
+        path=Path(chunk_id.rpartition("#")[0]),
         text=CHUNK_TEXT,
         fingerprint=compute_fingerprint(CHUNK_TEXT),
     )
@@ -47,6 +49,23 @@ def instance_reply(*instances: tuple[str, str, dict[str, str]]) -> str:
             "instances": [
                 {"name": name, "class": klass, "slots": slots, "excerpt": EXCERPT}
                 for name, klass, slots in instances
+            ]
+        }
+    )
+
+
+def described_reply(reading: dict[str, Any]) -> str:
+    """The instances one chunk stated, each with the description that chunk gave it."""
+    return json.dumps(
+        {
+            "instances": [
+                {
+                    "name": reading["name"],
+                    "class": reading["class"],
+                    "slots": reading["slots"],
+                    "description": reading["description"],
+                    "excerpt": EXCERPT,
+                }
             ]
         }
     )
@@ -72,18 +91,35 @@ def tbox_of(
 
 
 def client_for(state: dict) -> FakeLLM:
-    def respond(_call: int) -> str:
-        return instance_reply(*state["instances"])
+    """One request per chunk, each answered with the instances that chunk stated, and a
+    request after them that reconciles whatever several of the chunks described."""
+    readings: list[dict[str, Any]] = state.get("readings", [])
+
+    def respond(call: int) -> str:
+        if not readings:
+            return instance_reply(*state["instances"])
+        if call < len(readings):
+            return described_reply(readings[call])
+        return json.dumps({"descriptions": state["merged"]})
 
     return FakeLLM(respond)
 
 
+def chunks_of(state: dict) -> list[Chunk]:
+    """One chunk per reading the scenario named, and the single chunk every other scenario
+    of this feature builds from."""
+    return [make_chunk(reading["chunk"]) for reading in state.get("readings", [])] or [
+        make_chunk()
+    ]
+
+
 def build(state: dict, provenance_path: Path) -> None:
     config = state.get("config") or valid_config()
+    state["llm"] = client_for(state)
     state["instances_path"] = generate_abox(
-        [make_chunk()],
+        chunks_of(state),
         config,
-        client_for(state),
+        state["llm"],
         Path(state["schema_path"]),
         ProvenanceLog(provenance_path, "override"),
     )
@@ -155,6 +191,38 @@ def step_given_llm_returns_instance_with_slot(
     state: dict, name: str, klass: str, slot: str, value: str
 ) -> None:
     remember(state, (name, klass, {slot: value}))
+
+
+@given(
+    parsers.re(
+        rf"the LLM returns the instance {quoted('name')} of class {word('klass')} from "
+        rf"chunk#(?P<chunk>\d+) with description {quoted('description')}"
+    )
+)
+def step_given_llm_returns_instance_from_chunk_with_description(
+    state: dict, name: str, klass: str, chunk: str, description: str
+) -> None:
+    """One chunk's reading of an entity, added to what the chunks before it said.
+
+    The reconciliation is keyed by the id the entity is written under, because that is what
+    both the instances and the log are keyed by.
+    """
+    state.setdefault("readings", []).append(
+        {
+            "chunk": f"corpus/article{chunk}.txt#c{chunk}",
+            "name": name,
+            "class": klass,
+            "slots": {},
+            "description": description,
+        }
+    )
+    stated: dict[str, list[str]] = {}
+    for reading in state["readings"]:
+        stated.setdefault(_identifier(reading["name"]), []).append(reading["description"])
+    state["stated"] = stated
+    state["merged"] = {
+        entity: merged_description(entity, texts) for entity, texts in stated.items()
+    }
 
 
 @given(
@@ -334,6 +402,22 @@ def step_then_event_with_reason_recorded(provenance_path: Path, event: str, reas
 
 # Then: provenance
 
+@then(parsers.re(rf"the instance {word('name')} has a description merged from both chunks"))
+def step_then_instance_description_merged_from_both_chunks(state: dict, name: str) -> None:
+    entry = entries(state)[name]
+    assert entry["description"] == state["merged"][name], entry
+    prompt = state["llm"].prompts[-1]
+    assert all(text in prompt for text in state["stated"][name]), prompt
+
+
+@then(parsers.re(rf'an {quoted("event")} event is recorded with the merged description'))
+def step_then_event_recorded_with_merged_description(
+    state: dict, provenance_path: Path, event: str
+) -> None:
+    entry = event_named(provenance_path, event)
+    assert entry["description"] == state["merged"][entry["id"]], entry
+
+
 @then("every instance has an annotation with its source document and chunk")
 def step_then_every_instance_carries_provenance(state: dict) -> None:
     for name, entry in entries(state).items():
@@ -380,3 +464,5 @@ def step_then_source_documents_cite_the_new_document(output_dir: Path) -> None:
 @then(parsers.re(rf'an {quoted("event")} event for {word("name")} is recorded\s*$'))
 def step_then_event_for_instance_recorded(provenance_path: Path, event: str, name: str) -> None:
     assert event_named(provenance_path, event)["id"] == name
+
+

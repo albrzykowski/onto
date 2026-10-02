@@ -6,7 +6,14 @@ from pydantic import BaseModel, Field
 
 from onto.config import BuilderConfig
 from onto.dedup import Embedder, closest_of, verify_merge
-from onto.extraction import Candidate, CandidateKind, pascal_name, snake_name
+from onto.extraction import (
+    Candidate,
+    CandidateKind,
+    described_by_chunk,
+    merge_descriptions,
+    pascal_name,
+    snake_name,
+)
 from onto.llm import LLM, CompletionRequest, read_json
 from onto.provenance import ProvenanceLog, SourceRef
 
@@ -102,6 +109,7 @@ class _ClassDefinition(BaseModel):
 class _SlotDefinition(BaseModel):
     name: str
     range: str | None = None
+    description: str | None = None
     annotations: _Provenance
 
 
@@ -298,6 +306,20 @@ def generate_tbox(
     admitted = _admit(class_sources, "class", config, readings, log)
     admitted_slots = _admit(slot_sources, "relation", config, readings, log)
     plan = _plan(llm, admitted, admitted_slots, config)
+    classes = _classes(class_sources, admitted_slots, plan, admitted, readings, log)
+    for concept, description in _reconciled(candidates, "class", llm, config).items():
+        if concept not in classes:
+            continue
+        classes[concept].description = description
+        sources, excerpt = _reading(readings, "class", concept)
+        log.record(
+            event=_UPDATED,
+            id=concept,
+            source_documents=sources,
+            source_excerpt=excerpt,
+            description=description,
+        )
+    reconciled_slots = _reconciled(candidates, "relation", llm, config)
     name = f"{output_dir.name}-schema"
     schema = _Schema(
         id=f"{SCHEMA_NAMESPACE}/{name}",
@@ -306,18 +328,47 @@ def generate_tbox(
         default_prefix=output_dir.name,
         default_range="string",
         imports=["linkml:types"],
-        classes=_classes(class_sources, admitted_slots, plan, admitted, readings, log),
+        classes=classes,
         slots={},
     )
     for slot in admitted_slots:
+        slot_description = reconciled_slots.get(slot)
         schema.slots[slot] = _SlotDefinition(
-            name=slot, annotations=_provenance(slot_sources[slot])
+            name=slot, annotations=_provenance(slot_sources[slot]), description=slot_description
         )
         sources, excerpt = _reading(readings, "relation", slot)
         log.record(
             event=_SLOT_CREATED, id=slot, source_documents=sources, source_excerpt=excerpt
         )
+        if slot_description:
+            log.record(
+                event=_SLOT_UPDATED,
+                id=slot,
+                source_documents=sources,
+                source_excerpt=excerpt,
+                description=slot_description,
+            )
     return _write(schema, output_dir / SCHEMA_FILE_NAME)
+
+
+def _reconciled(
+    candidates: list[Candidate], kind: CandidateKind, llm: LLM, config: BuilderConfig
+) -> dict[str, str]:
+    """The concepts of one kind the corpus stated more than once, as the model reconciles them.
+
+    The plan describes every class in one reply and has to be brief; the reconciled text is
+    what the corpus said about this one concept, read in every chunk that stated it.
+    """
+    return merge_descriptions(
+        llm,
+        config,
+        kind,
+        described_by_chunk(
+            (candidate.name, candidate.description)
+            for candidate in candidates
+            if candidate.kind == kind
+        ),
+    )
 
 
 def _update_plan(

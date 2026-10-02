@@ -74,6 +74,15 @@ def split_names(raw: str) -> list[str]:
     return [name.strip() for name in re.split(r",|\band\b", raw) if name.strip()]
 
 
+def merged_description(concept: str, texts: list[str]) -> str:
+    """What the model answers when asked to reconcile several readings of one concept.
+
+    A wording of its own, so an entry or a schema that kept one of the readings instead of
+    the reconciliation would be visible in the output.
+    """
+    return f"{concept} as all {len(texts)} chunks together describe it."
+
+
 def log_lines(provenance_path: Path) -> list[str]:
     text = provenance_path.read_text(encoding="utf-8")
     return [line for line in text.splitlines() if line.strip()]

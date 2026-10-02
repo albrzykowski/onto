@@ -49,3 +49,10 @@ def test_a_slot_value_that_names_no_written_instance_is_dropped_and_recorded():
 @scenario("abox-generation.feature", "Two wordings of one id do not overwrite each other")
 def test_two_wordings_of_one_id_do_not_overwrite_each_other():
     pass
+
+
+@scenario(
+    "abox-generation.feature", "Instance description is merged from multiple chunks using LLM"
+)
+def test_instance_description_is_merged_from_multiple_chunks_using_llm():
+    pass

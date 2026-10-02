@@ -8,6 +8,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from onto.chunking import Chunk
 from onto.config import BuilderConfig
+from onto.extraction import described_by_chunk, merge_descriptions
 from onto.llm import LLM, CompletionRequest, read_json
 from onto.provenance import ProvenanceLog, SourceRef
 
@@ -32,11 +33,13 @@ Rules:
 - Use only the classes and slots listed below; invent nothing.
 - Every slot value is a single string naming the one entity it points to. A slot is never a \
 list, even when the text names several things for it; keep the most significant one.
+- State in one sentence, in English, what this text says the entity is.
 - Copy the excerpt verbatim from the source text; it is the only proof of where the \
 instance came from.
 
 Answer with a single JSON object and nothing else:
-{"instances": [{"name": ..., "class": ..., "slots": {...}, "excerpt": ...}]}"""
+{"instances": [{"name": ..., "class": ..., "slots": {...}, "description": ..., \
+"excerpt": ...}]}"""
 
 
 def _output_contract(config: BuilderConfig) -> str:
@@ -66,6 +69,7 @@ class Instance(BaseModel):
     id: str
     name: str
     class_name: str
+    description: str = ""
     slot_values: dict[str, str] = Field(default_factory=dict)
     source_documents: list[SourceRef] = Field(default_factory=list)
     source_excerpt: str = ""
@@ -78,6 +82,7 @@ class _Proposal(BaseModel):
     class_name: str = Field(alias="class")
     slots: dict[str, str] = Field(default_factory=dict)
     excerpt: str = ""
+    description: str = ""
 
 
 class _Answer(BaseModel):
@@ -132,6 +137,7 @@ def _instance(proposal: _Proposal, slots: list[str], chunk: Chunk) -> Instance:
         id=_identifier(proposal.name),
         name=proposal.name,
         class_name=proposal.class_name,
+        description=proposal.description,
         slot_values={
             slot: _identifier(value) for slot, value in proposal.slots.items() if slot in slots
         },
@@ -141,9 +147,11 @@ def _instance(proposal: _Proposal, slots: list[str], chunk: Chunk) -> Instance:
 
 
 def _entry(instance: Instance, unresolved: dict[str, str]) -> dict[str, Any]:
-    """One instance as written: its class, the slot values stated for it, and its provenance."""
+    """One instance as written: its class, its description, the slot values stated for it,
+    and its provenance. The description is written only when the corpus stated one."""
     return {
         "class": instance.class_name,
+        **({"description": instance.description} if instance.description else {}),
         **{
             slot: value
             for slot, value in instance.slot_values.items()
@@ -191,8 +199,13 @@ def _instances_of(
     under that id, so the one already there is kept and the other is refused and logged rather
     than silently overwriting it. The log says the id and quotes the text the refused entity
     was read from, which is where its name is to be found.
+
+    An entity the chunks describe differently gets one description reconciled from all of them,
+    and the reconciliation is recorded: the instance is written with that wording, so the log
+    has to say which wording that was.
     """
     instances: dict[str, Instance] = {}
+    stated: list[tuple[str, str]] = []
     for chunk in chunks:
         try:
             proposals = _proposals(llm, config, classes, chunk)
@@ -211,11 +224,7 @@ def _instances_of(
                 continue
             instance = _instance(proposal, classes[proposal.class_name], chunk)
             known = instances.get(instance.id)
-            if known is None:
-                instances[instance.id] = instance
-            elif known.name == instance.name:
-                _cite(known, instance)
-            else:
+            if known is not None and known.name != instance.name:
                 logger.warning(
                     "%s and %s both name the instance %s; keeping the first",
                     known.name,
@@ -229,6 +238,24 @@ def _instances_of(
                     source_documents=instance.source_documents,
                     reason=_IDENTIFIER_TAKEN,
                 )
+                continue
+            if known is None:
+                instances[instance.id] = instance
+            else:
+                _cite(known, instance)
+            stated.append((instance.id, proposal.description))
+    for id_, description in merge_descriptions(
+        llm, config, "instance", described_by_chunk(stated)
+    ).items():
+        instance = instances[id_]
+        instance.description = description
+        log.record(
+            event=_UPDATED,
+            id=id_,
+            source_documents=instance.source_documents,
+            source_excerpt=instance.source_excerpt,
+            description=description,
+        )
     return instances
 
 

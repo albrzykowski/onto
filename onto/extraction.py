@@ -1,6 +1,6 @@
 import logging
 import re
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Iterable, Iterator
 from typing import Literal
 
 from pydantic import BaseModel, Field
@@ -13,6 +13,7 @@ from onto.provenance import SourceRef
 logger = logging.getLogger(__name__)
 
 _MAX_TOKENS = 4096
+_MERGE_BATCH = 20
 
 CandidateKind = Literal["class", "relation"]
 
@@ -23,12 +24,14 @@ significant.
 Rules:
 - Write every name in English, even when the source text is written in another language.
 - A class name is PascalCase; a relation name is snake_case.
+- State in one sentence, in English, what this text says the concept is.
 - Copy the excerpt verbatim from the source text; it is the only proof of where a \
 concept came from.
 - Skip what the text merely assumes, mentions in passing, or is about outside the domain.
 
 Answer with a single JSON object and nothing else:
-{"classes": [{"name": ..., "excerpt": ...}], "relations": [{"name": ..., "excerpt": ...}]}"""
+{"classes": [{"name": ..., "description": ..., "excerpt": ...}], \
+"relations": [{"name": ..., "description": ..., "excerpt": ...}]}"""
 
 
 def _output_contract(config: BuilderConfig) -> str:
@@ -64,11 +67,13 @@ class Candidate(BaseModel):
     name: str
     source_documents: list[SourceRef] = Field(default_factory=list)
     source_excerpt: str = ""
+    description: str = ""
 
 
 class _Proposal(BaseModel):
     name: str
     excerpt: str = ""
+    description: str = ""
 
 
 class _Answer(BaseModel):
@@ -153,6 +158,7 @@ def _candidates_of(
             name=to_name(proposal.name),
             source_documents=sources,
             source_excerpt=proposal.excerpt,
+            description=proposal.description,
         )
         for proposal in proposals
     ]
@@ -161,6 +167,63 @@ def _candidates_of(
 def _batches(chunks: list[Chunk], size: int) -> Iterator[list[Chunk]]:
     for start in range(0, len(chunks), size):
         yield chunks[start : start + size]
+
+
+class _Merged(BaseModel):
+    descriptions: dict[str, str] = Field(default_factory=dict)
+
+
+def _merge_prompt(subject: str, listing: list[str]) -> str:
+    return "\n\n".join(
+        [
+            f"You are an ontology engineer. Several descriptions of the same {subject} were"
+            " read from different parts of a corpus. Write one description of each that"
+            " covers every version given, in English, in a single sentence. Do not invent"
+            " what no version states, and keep the name as it is written.",
+            "\n".join(f"- {line}" for line in listing),
+            'Answer with a single JSON object and nothing else:'
+            ' {"descriptions": {"<name>": <one sentence>}}',
+        ]
+    )
+
+
+def merge_descriptions(
+    llm: LLM, config: BuilderConfig, subject: str, described: dict[str, list[str]]
+) -> dict[str, str]:
+    """One description per concept the corpus stated more than once, reconciled by the model.
+
+    A concept read from several chunks is stated differently in each of them, and keeping one
+    version drops what the others said. Reconciling them is one request per build rather than
+    one per concept, with the names batched: a model rewriting a concept on its own has no
+    way to compare its answer with the answers it gave for the concepts next to it, and a
+    corpus that states the same concept in fifty chunks would cost fifty round trips.
+
+    Concepts the corpus stated once are not sent: their description is already the only one
+    there is, and the ontology writer has a description for them anyway.
+    """
+    repeated = [name for name, texts in described.items() if len(texts) > 1]
+    merged: dict[str, str] = {}
+    for start in range(0, len(repeated), _MERGE_BATCH):
+        names = repeated[start : start + _MERGE_BATCH]
+        listing = [f"- {name}: {' | '.join(described[name])}" for name in names]
+        reply = llm.complete(
+            CompletionRequest(
+                model=config.model, prompt=_merge_prompt(subject, listing), max_tokens=_MAX_TOKENS
+            )
+        )
+        merged.update(_Merged.model_validate_json(read_json(reply)).descriptions)
+    return merged
+
+
+def described_by_chunk(items: Iterable[tuple[str, str]]) -> dict[str, list[str]]:
+    """What each concept was described as, in the order the corpus described it, and with a
+    description the corpus repeated not entered twice."""
+    described: dict[str, list[str]] = {}
+    for name, description in items:
+        texts = described.setdefault(name, [])
+        if description and description not in texts:
+            texts.append(description)
+    return described
 
 
 def extract(chunks: list[Chunk], config: BuilderConfig, llm: LLM) -> list[Candidate]:

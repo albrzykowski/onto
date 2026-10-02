@@ -11,6 +11,7 @@ from features.steps.support import (
     config_for,
     described,
     event_named,
+    merged_description,
     quoted,
     split_names,
     word,
@@ -24,12 +25,15 @@ CORPUS_CLASSES = ["Vehicle", "Engine", "Manufacturer"]
 CORPUS_SLOTS = ["has_engine", "produced_by"]
 
 
-def candidate(kind: CandidateKind, name: str, chunk_id: str = DEFAULT_CHUNK) -> Candidate:
+def candidate(
+    kind: CandidateKind, name: str, chunk_id: str = DEFAULT_CHUNK, description: str = ""
+) -> Candidate:
     return Candidate(
         kind=kind,
         name=name,
         source_documents=[SourceRef(path=Path(chunk_id.rpartition("#")[0]), chunk_id=chunk_id)],
         source_excerpt="The 1.6 TDI engine is installed in the Golf produced by VW",
+        description=description,
     )
 
 
@@ -64,15 +68,19 @@ def extract_from(state: dict, class_names: list[str], slot_names: list[str]) -> 
 
 
 def client_for(state: dict) -> FakeLLM:
-    def respond(_call: int) -> str:
+    """The plan comes first; a build that reconciles descriptions asks again afterwards."""
+    def respond(call: int) -> str:
+        if call and "merged" in state:
+            return json.dumps({"descriptions": state["merged"]})
         return state["reply"]
 
     return FakeLLM(respond)
 
 
 def generate(state: dict, output_dir: Path, log: ProvenanceLog) -> None:
+    state["llm"] = client_for(state)
     state["schema_path"] = generate_tbox(
-        state["candidates"], config_for(state), client_for(state), output_dir, log
+        state["candidates"], config_for(state), state["llm"], output_dir, log
     )
     state["document"] = yaml.safe_load(state["schema_path"].read_text(encoding="utf-8"))
 
@@ -81,8 +89,52 @@ def classes(state: dict) -> dict:
     return state["document"]["classes"]
 
 
+def slots(state: dict) -> dict:
+    return state["document"]["slots"]
+
+
 def sources_of(state: dict, name: str) -> list[str]:
     return classes(state)[name]["annotations"]["source_documents"]["value"]
+
+
+def reading(
+    state: dict, kind: CandidateKind, name: str, chunk: str, description: str
+) -> None:
+    """One chunk's description of a concept, added to what the chunks before it said.
+
+    Every step rebuilds the candidates and the answers from the readings so far, because the
+    second chunk of a scenario is stated after the first one was already answered for.
+    """
+    readings = [*state.get("readings", []), (kind, name, chunk, description)]
+    state["readings"] = readings
+    state["candidates"] = [
+        candidate(kind, concept, f"corpus/article{number}.txt#c{number}", said)
+        for kind, concept, number, said in readings
+    ]
+    state["merged"] = {
+        concept: merged_description(concept, texts)
+        for concept, texts in stated_by_concept(readings).items()
+    }
+    state["reply"] = plan_reply(
+        [concept for kind, concept, _, _ in readings if kind == "class"],
+        [concept for kind, concept, _, _ in readings if kind == "relation"],
+    )
+
+
+def stated_by_concept(readings: list[tuple[CandidateKind, str, str, str]]) -> dict[str, list[str]]:
+    """What each concept was described as, in the order the corpus described it."""
+    stated: dict[str, list[str]] = {}
+    for _, concept, _, description in readings:
+        stated.setdefault(concept, []).append(description)
+    return stated
+
+
+def reconciled_from(state: dict, concept: str) -> bool:
+    """A reconciliation is only a merge if the model was given every reading it reconciles."""
+    return all(
+        description in state["llm"].prompts[-1]
+        for description in stated_by_concept(state["readings"])[concept]
+    )
 
 
 # Given: what the LLM returned
@@ -140,6 +192,30 @@ def step_given_configuration_with_allowed_relation(state: dict, name: str) -> No
 )
 def step_given_llm_returned_one_class_candidate(state: dict, name: str, relations: str) -> None:
     extract_from(state, [name], re.findall(r'"([^"]+)"', relations))
+
+
+@given(
+    parsers.re(
+        rf"the LLM returns the class {word('klass')} from chunk#(?P<chunk>\d+) with "
+        rf"description {quoted('description')}"
+    )
+)
+def step_given_llm_returned_class_from_chunk_with_description(
+    state: dict, klass: str, chunk: str, description: str
+) -> None:
+    reading(state, "class", klass, chunk, description)
+
+
+@given(
+    parsers.re(
+        rf"the LLM returns the relation {word('slot')} from chunk#(?P<chunk>\d+) with "
+        rf"description {quoted('description')}"
+    )
+)
+def step_given_llm_returned_relation_from_chunk_with_description(
+    state: dict, slot: str, chunk: str, description: str
+) -> None:
+    reading(state, "relation", slot, chunk, description)
 
 
 @given("a generated T-Box")
@@ -263,3 +339,25 @@ def step_then_annotation_lists_all_chunks(state: dict, name: str, count: str) ->
     assert sources_of(state, name) == [
         f"corpus/article{number}.txt#c{number}" for number in range(1, int(count) + 1)
     ], sources_of(state, name)
+
+
+@then(parsers.re(rf"the class {word('name')} has a description merged from both chunks"))
+def step_then_class_description_merged_from_both_chunks(state: dict, name: str) -> None:
+    definition = classes(state)[name]
+    assert definition["description"] == state["merged"][name], definition
+    assert reconciled_from(state, name), state["llm"].prompts[-1]
+
+
+@then(parsers.re(rf"the slot {word('name')} has a description merged from both chunks"))
+def step_then_slot_description_merged_from_both_chunks(state: dict, name: str) -> None:
+    definition = slots(state)[name]
+    assert definition["description"] == state["merged"][name], definition
+    assert reconciled_from(state, name), state["llm"].prompts[-1]
+
+
+@then(parsers.re(rf'an {quoted("event")} event is recorded with the merged description'))
+def step_then_event_recorded_with_merged_description(
+    state: dict, provenance_path: Path, event: str
+) -> None:
+    entry = event_named(provenance_path, event)
+    assert entry["description"] == state["merged"][entry["id"]], entry
