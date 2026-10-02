@@ -146,7 +146,6 @@ def _entry(instance: Instance) -> dict[str, Any]:
                 "tag": "source_documents",
                 "value": [source.chunk_id for source in instance.source_documents],
             },
-            "source_excerpt": {"tag": "source_excerpt", "value": instance.source_excerpt},
         },
     }
 
