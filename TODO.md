@@ -35,6 +35,42 @@ trafi do `features/tbox-generation.feature`.
     Then every class and every slot has a "source_excerpt" annotation with the text it was derived from
 ```
 
+### Batchowanie w obrębie jednego dokumentu — wybrane
+
+`_candidates_of` w `onto/extraction.py:255` przypisuje kandydatowi **każdy chunk z jego batcha**,
+co udokumentowuje docstring `extract` (`onto/extraction.py:242-244`): model widział cały batch
+naraz, więc precyzję daje dopiero `source_excerpt`. Przy jednym temacie korpusu jest to
+nieszkodliwe. Przebieg na trzech dokumentach — dwóch motoryzacyjnych i `Ukladplanetarny.pdf`
+(po polsku), `batch_size: 4`, 2026-10-02 — pokazał, że nie:
+
+- batch 1 to `History_of_the_car.pdf#c1..c3` plus `Ukladplanetarny.pdf#c1`, a batch 2 to
+  `Ukladplanetarny.pdf#c2` plus `When-Was-the-First-Car-...docx.pdf#c1`;
+- klasa `Planet` cytuje **wszystkie 6 chunków z 3 dokumentów**, a `Star` 4 chunki, w tym trzy
+  motoryzacyjne — mimo że `source_excerpt` obu jest poprawnym polskim tekstem o Układzie
+  Słonecznym.
+
+Kandydat może więc wskazać dokument, z którego nic nie pochodzi, a czytelnik logu nie ma
+jak tego rozpoznać bezzagodnić, bo wiarygodny jest tylko `source_excerpt`.
+
+**Wybrane: 2 — `_batches` ma grupować chunky w obrębie jednego dokumentu.** Kandydat wtedy
+nigdy nie wskaże obcego dokumentu, a precyzja wraca do poziomu dokumentu, co jest granicą,
+poza którą i tak nie schodzimy.
+
+Koszt do zapisania w scenariuszu: jedna dodatkowa pula żądań na dokument. Te 6 chunków dziś
+idzie w 2 batchach, po zmianie w 3 — jeden na dokument. Przy korpusie z 50 dokumentów
+liczba żądań rośnie z tyle, ile jest dokumentów, a nie z `batch_size`.
+
+Do rozstrzygnięcia przed implementacją: przyjęty scenariusz
+`features/tbox-generation.feature:28` („the source_documents annotation of Vehicle lists all
+3 chunks") przypina dokładnie atrybucję per-batch, a jego `Given` mówi o 3 niezależnych
+chunkach bez podania dokumentów. Agent nie edytuje plików `.feature`, więc autor Gherkina musi
+zdecydować, czy `Given` ma wskazywać 3 chunki **jednego** dokumentu — wtedy scenariusz
+przechodzi bez zmiany oczekiwania — czy 3 dokumenty, a wtedy zmienia się oczekiwanie na
+listę jednego chunka. Do rozważenia przy tej samej okazji: `features/update-mode.feature:31`
+doprecyzowuje, że `source_documents` klasy „extended with the new document", więc przy
+batchowaniu per-dokument ta scena powinna dostać swój scenariusz na łączenie chunków z różnych
+dokumentów.
+
 ## `features/chunking.feature`
 
 `chunk_id` powinien być niezależny od bezwzględnej ścieżki. Brak scenariusza sprawdzającego,
@@ -104,6 +140,62 @@ Propozycja scenariusza dla przypadku prefiksowego (do napisania przez autora Ghe
 
 Na przypadek pierwszy z tabeli scenariusza nie ma, dopóki punkt 3 nie zostanie rozstrzygnięty:
 dziś nie wiadomo, czy slot ma w ogóle obowiązek wskazywać na instancję.
+
+### Prompt instancji nie zna domeny — zgłoszone przez prawdziwy przebieg
+
+`onto/instance_gen.py:117` (`_prompt`) składa cztery sekcje: instrukcje, listę klas schematu,
+kontrakt wyjścia i tekst źródłowy. **Domeny nie ma wcale** — słowo `domains` nie występuje w tym
+module. Ekstrakcja klas ją ma (`_scope` w `onto/extraction.py`), i dlatego T-Box w przebiegu
+z 2026-10-02 trzymał tylko 6 klas astronomicznych: dwa dokumenty motoryzacyjne wydały zero
+kandydatów klas. Ta sama rozbieżność po stronie instancji dała 19 instancji, z czego **10
+motoryzacyjnych sklasyfikowanych jako obiekty astronomii**:
+
+| instancja | klasa |
+| --- | --- |
+| `Model_T`, `Curved_Dash_Oldsmobile`, `Motorwagen` | `Planet` |
+| `Ford_Motor_Company`, `Benz_Patent_Motor_Car_model_No_1` | `Star` |
+| `Gottlieb_Daimler`, `Karl_Benz`, `Mercedes` | `Moon` |
+| `Cannstatt_Daimler` | `DwarfPlanet` |
+| `American_gasoline_automobile` | `Asteroid` |
+
+Instrukcja mówi „Use only the classes and slots listed below; invent nothing", czyli model **musi**
+wybrać jedną z 6 klas, ale nigdzie nie ma „a jeśli tekst jest spoza domen, zwróć pustą listę".
+Jedyna bramka, `not_in_tbox`, sprawdza czy klasa **istnieje**, a nie czy pasuje do domeny —
+`Planet` istnieje, więc przepuszcza. Sloty tych instancji zostały odrzucone jako
+`unresolved_reference`, więc przetrwały jako puste skorupy: nazwa, klasa, opis, zero slotów.
+`not_in_tbox` zadziałał tam, gdzie model odmówił wrócić klasy spoza schematu (10 odrzuceń),
+i nie zadziałał tam, gdzie klasa istniała, lecz była bezprzedmiotowa.
+
+To łamie obietnicę z `AGENTS.md` wprost, tylko w drugą stronę: „An `automotive` prompt must
+never yield `Recipe`" — tutaj prompt `solar_system` wyprodukował `Model_T` jako `Planet`.
+
+**Proponowana naprawa:** wstrzyknąć domenę do promptu instancji przez `_scope(config)` z
+`onto/extraction` oraz dodać regułę „tekst spoza domen → `\"instances\": []`". Bez nowej
+zależności: `instance_gen` już importuje z `extraction` (`described_by_chunk`,
+`merge_descriptions`), a `_Answer.instances` ma `default_factory=list`, więc pusta odpowiedź
+przechodzi walidację bez zmian w kodzie poza promptem.
+
+Do rozstrzygnięcia przed wdrożeniem: dziedzina i prompt to dwie niezależne sprawy. Dodanie
+domeny `automotive` do `config.yaml` czyni chunky motoryzacyjne w-brzydome, ale nie uczy
+modelu, że tekst spoza domeny ma dawać pustą listę — ten sam wyciek wróci przy pierwszym
+dokumencie spoza tematu. Samo wstrzyknięcie domeny do promptu wystarczy, ale wtedy oba
+tematy w jednej ontologii nadal nie powstaną, dopóki `config.yaml` nie wymieni obu.
+
+Propozycja scenariusza (do napisania przez autora Gherkina):
+
+```gherkin
+  Scenario: A chunk outside the configured domains yields no instances
+    Given a configuration with the domain "solar_system" describing the Solar System
+    And a chunk of a document about the history of the car
+    And the LLM is asked for instances of the class Vehicle
+    When the A-Box is generated
+    Then no instance is created
+    And the instance "Model T" is not written
+```
+
+Do rozważenia przy tej samej okazji: czy pusta odpowiedź ma być zdarzeniem (`chunk.rejected`
+albo `instance.rejected` bez `id`), czy ma być ciszą. Dziś jest ciszą, a z logu nie da się
+odsadzić „ten chunk nie dotyczył domeny" od „model nic nie znalazł".
 
 ## Uwagi
 
