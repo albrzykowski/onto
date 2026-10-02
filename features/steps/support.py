@@ -1,10 +1,22 @@
-"""Helpers shared by step-definition modules."""
+"""Helpers shared by step-definition modules, and the one step two features share.
+
+An update is a whole build, so it is run through `onto.builder.build` rather than through the
+generators. That step definition therefore lives here rather than in either feature's own
+module: `update-mode.feature` and `abox-generation.feature` both run an update, and two
+definitions of one step text would leave pytest-bdd to pick a winner.
+"""
 
 import json
+import math
 import re
 from collections.abc import Callable
 from pathlib import Path
+from typing import Any
 
+import yaml
+from pytest_bdd import when
+
+from onto import builder
 from onto.config import BuilderConfig
 from onto.llm import CompletionRequest
 
@@ -84,3 +96,197 @@ class FakeLLM:
     def complete(self, request: CompletionRequest) -> str:
         self.prompts.append(request.prompt)
         return self._respond(len(self.prompts) - 1)
+
+
+# The ontology and the corpus an update starts from. Both features that run an update need
+# them, and the seeds are what tell a step how far the previous build got.
+
+CORPUS = "corpus"
+EXCERPT = "The Golf has a combustion engine and the Passat a manual transmission."
+
+EXISTING_CLASS = "Vehicle"
+EXISTING_INSTANCE = "VW_Golf"
+EXISTING_RANGE = "string"
+PROPOSED_RANGE = "integer"
+
+ONTOLOGY_FILES = ("schema.yaml", "instances.yaml")
+MERGE_MARKER = "denote the same concept"
+
+
+def input_dir(workdir: Path) -> Path:
+    return workdir / CORPUS
+
+
+def chunk_id(name: str) -> str:
+    """The id `chunk_document` gives the first chunk of a document of this corpus."""
+    return f"{CORPUS}/{name}#c1"
+
+
+def write_document(workdir: Path, name: str, text: str) -> None:
+    corpus = input_dir(workdir)
+    corpus.mkdir(parents=True, exist_ok=True)
+    (corpus / name).write_text(text, encoding="utf-8")
+
+
+def write_yaml(path: Path, document: dict[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(yaml.safe_dump(document, sort_keys=False), encoding="utf-8")
+
+
+def read_yaml(path: Path) -> dict[str, Any]:
+    return yaml.safe_load(path.read_text(encoding="utf-8"))
+
+
+def ontology_as_written(output_dir: Path) -> dict[str, str]:
+    """The T-Box and the A-Box as they stand, to tell a rewrite from an extension."""
+    return {
+        path.name: path.read_text(encoding="utf-8")
+        for path in sorted(output_dir.iterdir())
+        if path.name in ONTOLOGY_FILES
+    }
+
+
+def source_document_annotation(values: list[str]) -> dict[str, Any]:
+    return {"tag": "source_documents", "value": values}
+
+
+def existing_schema() -> dict[str, Any]:
+    cited = [chunk_id("old.txt")]
+    return {
+        "id": "https://example.org/ontology-schema",
+        "name": "ontology-schema",
+        "prefixes": {"ontology": "https://example.org/ontology/"},
+        "default_prefix": "ontology",
+        "default_range": EXISTING_RANGE,
+        "imports": ["linkml:types"],
+        "classes": {
+            EXISTING_CLASS: {
+                "name": EXISTING_CLASS,
+                "description": "A compact passenger car produced since 1974.",
+                "slots": ["has_engine"],
+                "annotations": {"source_documents": source_document_annotation(cited)},
+            }
+        },
+        "slots": {
+            "has_engine": {
+                "name": "has_engine",
+                "annotations": {"source_documents": source_document_annotation(cited)},
+            }
+        },
+    }
+
+
+def existing_instances() -> dict[str, Any]:
+    return {
+        "instances": {
+            EXISTING_INSTANCE: {
+                "class": EXISTING_CLASS,
+                "has_engine": "1_6_TDI",
+                "annotations": {
+                    "source_documents": source_document_annotation([chunk_id("old.txt")]),
+                },
+            }
+        }
+    }
+
+
+class FakeEmbedder:
+    """Vectors that reproduce the similarity a scenario states, and nothing else.
+
+    Every text is given an axis of its own, so two texts given no resemblance are orthogonal;
+    a text that should resemble another leans its vector onto the axis of that other one.
+    """
+
+    def __init__(self, resemblances: dict[str, tuple[str, float]]) -> None:
+        self._resemblances = resemblances
+
+    def embed(self, texts: list[str]) -> list[list[float]]:
+        axis = {text: index for index, text in enumerate(texts)}
+        vectors = [[0.0] * len(texts) for _ in texts]
+        for index in range(len(texts)):
+            vectors[index][index] = 1.0
+        for text, (other, score) in self._resemblances.items():
+            if text not in axis or other not in axis:
+                continue
+            vectors[axis[text]] = [0.0] * len(texts)
+            vectors[axis[text]][axis[text]] = math.sqrt(max(0.0, 1 - score**2))
+            vectors[axis[text]][axis[other]] = score
+        return vectors
+
+
+def update_client(state: dict) -> FakeLLM:
+    """An update asks the model five different things; the double answers each by what the
+    prompt asks for, so no scenario depends on the order the calls happen to come in.
+    """
+
+    def concepts() -> str:
+        return json.dumps(
+            {
+                "classes": [
+                    {"name": name, "excerpt": EXCERPT} for name in state["class_names"]
+                ],
+                "relations": [
+                    {"name": name, "excerpt": EXCERPT} for name in state.get("relations", [])
+                ],
+            }
+        )
+
+    def plan() -> str:
+        return json.dumps(
+            {
+                "classes": {
+                    name: {
+                        "description": f"A {name} as the model described it.",
+                        "slots": state.get("planned_slots", []),
+                        **({"is_a": state["parent"]} if state.get("parent") else {}),
+                    }
+                    for name in state["planned_classes"]
+                },
+                "slot_ranges": state.get("slot_ranges", {}),
+            }
+        )
+
+    def instances() -> str:
+        return json.dumps(
+            {
+                "instances": [
+                    {
+                        "name": "VW Passat",
+                        "class": state["instances_class"],
+                        "slots": {},
+                        "excerpt": EXCERPT,
+                    }
+                ]
+            }
+        )
+
+    def respond(call: int) -> str:
+        prompt = client.prompts[call]
+        if MERGE_MARKER in prompt:
+            return json.dumps({"same_concept": state.get("merge_verified", False)})
+        if "Candidate classes:" in prompt or "New concepts:" in prompt:
+            return plan()
+        if "already in use" in prompt:
+            return json.dumps({"range": state.get("resolved_range", PROPOSED_RANGE)})
+        if "Classes of the schema:" in prompt:
+            return instances()
+        return concepts()
+
+    client = FakeLLM(respond)
+    return client
+
+
+@when("update mode runs")
+def step_when_update_mode_runs(state: dict, workdir: Path, output_dir: Path) -> None:
+    state.setdefault("class_names", [])
+    state.setdefault("planned_classes", state["class_names"])
+    state.setdefault("instances_class", EXISTING_CLASS)
+    state["before"] = ontology_as_written(output_dir)
+    state["client"] = update_client(state)
+    builder.build(
+        input_dir(workdir),
+        output_dir,
+        valid_config(mode="update"),
+        state["client"],
+        FakeEmbedder(state.get("resemblances", {})),
+    )

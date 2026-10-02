@@ -2,6 +2,9 @@
 
 from pytest_bdd import scenario
 
+# pytest-bdd registers a step definition in the namespace of the module that defines it,
+# so the shared update step in support.py reaches these scenarios only through this import.
+from features.steps.support import *  # noqa: F401,F403
 from features.steps.update_mode_steps import *  # noqa: F401,F403
 
 

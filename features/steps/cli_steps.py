@@ -7,10 +7,16 @@ import shlex
 from pathlib import Path
 
 import pytest
-import yaml
 from pytest_bdd import given, parsers, then, when
 
-from features.steps.support import VALID_CONFIG, FakeLLM, quoted, valid_config
+from features.steps.support import (
+    VALID_CONFIG,
+    FakeLLM,
+    quoted,
+    read_yaml,
+    valid_config,
+    write_yaml,
+)
 from onto.builder import build
 from onto.cli import main
 from onto.config import BuilderConfig
@@ -30,15 +36,6 @@ INSTANCES_FILE = "instances.yaml"
 
 BUILT_CLASSES = [FIRST_CLASS, SECOND_CLASS]
 EXTENDED_CLASSES = [SECOND_CLASS]
-
-
-def read_yaml(path: Path) -> dict:
-    return yaml.safe_load(path.read_text(encoding="utf-8"))
-
-
-def write_yaml(path: Path, document: dict) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(yaml.safe_dump(document, sort_keys=False), encoding="utf-8")
 
 
 def write_document(workdir: Path, directory: str, text: str) -> None:
