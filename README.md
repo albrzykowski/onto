@@ -1,10 +1,9 @@
 # Auto Ontology Builder
 
-A Python library that automatically builds an ontology (T-Box + A-Box) from
-unstructured text documents using an LLM of your choice. The ontology is written in
-[LinkML](https://linkml.io), and every class, slot and instance it produces carries
-provenance: the source document, the chunk and the exact text excerpt it was derived
-from.
+A Python library that automatically builds an ontology (T-Box + A-Box) from unstructured text
+documents using an LLM of your choice. The ontology is written in [LinkML](https://linkml.io),
+and every class, slot and instance it produces is recorded in a provenance log with the source
+document, the chunk and the exact text excerpt it was derived from.
 
 The project is under active development.
 
@@ -26,26 +25,30 @@ source .venv/bin/activate  # Linux/macOS
 pip install -e .
 ```
 
-One adapter answers for every provider, so there is no provider package left to install.
+#### What an adapter is
 
-#### What the provider layers cost
+An *adapter* is the small piece of code that sends one request to a language model and hands
+the answer back. Nothing else in this project talks to a provider — everything else works with
+the answer. Two adapters ship with the library: one for answering prompts, one for embeddings.
 
-Both adapters run on [LiteLLM](https://github.com/BerriAI/litellm), which is what lets one
-adapter answer for every provider. It is the heaviest dependency this project takes, and on
-Linux it needs a native library:
+Both run on [LiteLLM](https://github.com/BerriAI/litellm), which already knows how to reach
+OpenAI, Mistral, Anthropic and the other providers. That is why there is no provider package to
+install: you choose a provider by naming it in the model, not by installing anything.
+
+LiteLLM is the heaviest dependency this project takes. On Linux it also needs a native C++
+library at run time, which most distributions already provide. On NixOS it has to be put on the
+library path first:
 
 ```bash
-# NixOS only: tokenizers links against the C++ runtime, which is not on the default path
+# NixOS only
 export LD_LIBRARY_PATH=/nix/store/<hash>-gcc-*-lib/lib:$LD_LIBRARY_PATH
 ```
 
-Every command below needs it on NixOS — not just `pip install`, but anything that imports
-LiteLLM, tests included. Elsewhere it is found on its own.
+On NixOS every command below needs that line — not only `pip install`, but anything that imports
+LiteLLM, tests included. On Windows, macOS and other Linux distributions nothing has to be set.
 
-Measured on `litellm` 1.103.1: 134 MB in `site-packages`, 61 installed packages, and roughly
-15 seconds for the first `import litellm`. The library itself is 212 KB. `openai` is a direct
-dependency too, not an extra: LiteLLM answers with OpenAI-shaped responses, so its exceptions
-derive from `openai.APIError`, and both adapters catch that class rather than
+`openai` is a direct dependency too, not an extra: LiteLLM answers with OpenAI-shaped responses,
+so its errors derive from `openai.APIError`, and both adapters catch that class rather than
 `litellm.APIError`, which is not the base of LiteLLM's errors and would catch nothing.
 
 ### 3. Describe the ontology, the models and the API keys
@@ -53,23 +56,41 @@ derive from `openai.APIError`, and both adapters catch that class rather than
 Copy `config.example.yaml` to `config.yaml` and adjust it for your setup. You can also create `config.yaml` manually:
 
 ```yaml
+# Subject matter of the ontology: domain name -> description.
+# At least one domain is required.
 domains:
   automotive: "Passenger and commercial vehicles and their components"
-allowed_classes:
-  Vehicle: "A machine that carries people or goods"
-allowed_relations:
-  produced_by: "Relates a product to the organization that makes it"
-model: mistral/mistral-large-latest
-embedding_model: mistral/mistral-embed
-chunking_strategy: fixed
-max_chunk_tokens: 2000
-overlap_tokens: 200
-batch_size: 4
-max_concepts_per_batch: 5
+
+# Concepts the model may use. Leave a map as {} to let the model pick concepts within the
+# domains. If you list a concept, you must also describe it.
+allowed_classes: {}
+allowed_relations: {}
+
+# "override" starts from scratch, "update" merges with the ontology already in the output
+# directory and uses embeddings to recognise repeated concepts.
 mode: override
-similarity_threshold: 0.85
+
+# Models. The part before the slash is the provider ("mistral", "openai", ...). Both models
+# are required and may point to different providers.
+model: "mistral/mistral-large-latest"
+embedding_model: "mistral/mistral-embed"
+
+# Keys, passed straight to the adapters. Nothing is read from the environment. If both models
+# use the same provider, the same key works for both.
 api_key: "your_api_key"
 embedding_api_key: "your_api_key"
+
+# How documents are split into chunks.
+chunking_strategy: fixed
+max_chunk_tokens: 2000
+overlap_tokens: 200  # overlap between chunks; must be smaller than max_chunk_tokens
+
+# How much the model is asked for at once.
+batch_size: 4
+max_concepts_per_batch: 5
+
+# How similar two concept names must be to count as the same concept, in update mode.
+similarity_threshold: 0.85
 ```
 
 **Every field is required.** There are no defaults and nothing is read from the environment,
@@ -80,12 +101,12 @@ maps needs a description, because the description is what reaches the prompt.
 `domains` narrows the subject matter; `allowed_classes` and `allowed_relations` go further and
 list the concepts themselves. List either of the two allow-lists and the model is told to use
 only those names. Leave both maps as `{}` and the model picks the concepts that matter within
-`domains` — but it still works inside them, and a `domains: [automotive]` build never yields
-a `Recipe`.
+`domains` — but it still works inside them, and a build about `automotive` never yields a
+`Recipe`.
 
-Each model name carries its provider: the part before the slash decides who answers. This is
-the only place a provider is named, which is what keeps a build from sending its prompts to
-one account and its embeddings to another.
+The provider is named by the model, never by a separate setting: the part before the slash
+decides who answers. Naming both models is what keeps a build from sending its prompts to one
+account and its embeddings to another.
 
 `model` is the model that answers the prompts, `embedding_model` the one that turns concept
 names into vectors for update mode. They are separate because a provider embeds with a
@@ -153,13 +174,11 @@ Pass `api_key=config.api_key` to the adapter. LiteLLM will not look the key up f
 environment for a request that names a provider, so leaving it out sends a request with no
 credentials and the provider answers `Invalid API Key` — the same as a key that really is wrong.
 
-Both adapters bound each request: `onto.llm_litellm.TIMEOUT_SECONDS` (120, against LiteLLM's
-own 6000) and `NUM_RETRIES` (3). A provider that never answers cannot hold a build open, and a
-transient failure is retried rather than costing the run every concept that batch stated. A
-failure that survives the attempts raises as before, and the caller logs it and skips the
-batch. They are module constants, not configuration fields: there is nothing about them that a
-user of this project should have to tune, and every field in `config.yaml` is a decision about
-the ontology.
+The adapters also bound every request: `onto.llm_litellm.TIMEOUT_SECONDS` (120) and
+`NUM_RETRIES` (3). A provider that stops answering can no longer hold a build open forever, and
+a short failure is retried instead of losing everything that batch found. These are constants in
+the module rather than fields in `config.yaml`, because there is nothing in them that you should
+have to tune: every field in the configuration is a decision about the ontology.
 
 `build` runs the whole pipeline — ingestion, chunking, extraction, T-Box, A-Box — in the
 mode `config.mode` names. The steps are also available one by one, if you want to inspect
@@ -184,12 +203,8 @@ generate_abox(chunks, config, llm, schema_path, log)
 The log is not something the schema is written beside afterwards: the schema writer records
 every class it writes, refuses or updates in it as it goes, so it has to exist first.
 
-The schema is the only vocabulary for the instances: an instance of a class the
-T-Box does not define is never written — it is rejected and logged as
-`instance.rejected`.
-
-With `mode: override` (the default) that is all `build` does: it discards whatever the
-output directory held before.
+With `mode: override` that is all `build` does: it discards whatever the output directory held
+before.
 
 ### 6. Extend the ontology with new documents
 
@@ -200,11 +215,10 @@ schema already has is merged into it, and a slot the new documents describe with
 type is put to the model to resolve. The provenance log of the earlier build is appended
 to, not replaced, and a run that finds nothing new writes nothing at all.
 
-Telling a repeated concept from a new one is done with embeddings, so update mode is given
-an embedder. The one that ships is handed `embedding_model` and `embedding_api_key` from the
-configuration, and nothing else: a build may answer and embed through different providers,
-so `embedding_api_key` is its own key and there is no fallback to `api_key` and no
-environment variable to pick one up from.
+Telling a repeated concept from a new one is done with embeddings, so update mode is given an
+embedder. The one that ships takes `embedding_model` and `embedding_api_key` from the
+configuration and nothing else — the same rule as for the model: no key is picked up from the
+environment, and there is no fallback from `embedding_api_key` to `api_key`.
 
 ```python
 from onto.builder import build
@@ -246,7 +260,16 @@ classes:
     description: A compact passenger car produced since 1974.
     slots:
     - has_engine
+slots:
+  has_engine:
+    name: has_engine
+    description: Links a vehicle to the engine that powers it.
 ```
+
+A concept the corpus states in several places gets one description that covers all of them,
+because a description taken from a single chunk would drop what the others said. The same holds
+for classes, slots and instances, and `class.updated`, `slot.updated` and `instance.updated`
+events in the log record the wording that was written.
 
 `ontology/instances.yaml` — the A-Box:
 
@@ -254,19 +277,21 @@ classes:
 instances:
   VW_Golf:
     class: Vehicle
+    description: A compact car produced by Volkswagen since 1974.
     has_engine: 1_6_TDI
     annotations:
       source_documents:
         tag: source_documents
         value:
         - corpus/article1.txt#c1
-      source_excerpt:
-        tag: source_excerpt
-        value: The Golf is produced by VW and has a 1.6 TDI engine
 ```
 
-`ontology/provenance.jsonl` — one event per line, recording what each build
-changed and where it came from.
+An instance is only written for a class the T-Box defines. Anything else is left out and
+recorded as `instance.rejected` with the reason — a slot value that names no instance the
+A-Box knows included.
 
-`ontology/state.json` — the fingerprint of every document a build has read, so a later
-run can tell which of them it has already seen.
+`ontology/provenance.jsonl` — one event per line, recording what each build changed and where
+it came from: the source document, the chunk and the text excerpt.
+
+`ontology/state.json` — the fingerprint of every document a build has read, so a later run can
+tell which of them it has already seen.

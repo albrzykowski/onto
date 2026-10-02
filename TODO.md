@@ -188,3 +188,18 @@ i użyć formy SPDX; dokładne minimum do potwierdzenia przy wdrożeniu, nie z p
 4. **CI:** brak `.github/`. Warto dodać przepłyg na trzy udokumentowane kontrole
    (`pytest`, `ruff`, `mypy`), ale dopiero po krokach 1–4. Uwaga: `LD_LIBRARY_PATH`
    z `AGENTS.md` to obejście NixOS-a i nie może trafić do publicznego przepływu.
+
+-------------------------------------- DODANE PRZEZ UŻYTKOWNIKA -----------------------
+
+Zadanie 1:
+
+Poprawki w README.md:
+
+- W README.md jest konfiguracja dla NiXOS, to niedopuszczalne. Opis musi byc krosssystemowy. 
+- Paragraf: "Measured on litellm 1.103.1: (...) " - do usuniecia
+- Mowa jest o adapterach ale nie ma wytłumaczenia co to jest.
+- config.yaml w README powinien być z komentarzami takimi jak w config.example.yaml
+- Sprawdż aktualonośc pliku
+- Sprawdź logiczną spójność
+- Poziom angielskiego B1/B2
+- Odbiorcami mogą być DataScietnist a nie programiści, nie może być zbyt skomplikowany technicznie 
