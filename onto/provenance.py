@@ -22,6 +22,7 @@ class ProvenanceEvent(BaseModel):
     id: str
     source_documents: list[SourceRef] = Field(default_factory=list)
     source_excerpt: str = ""
+    value: str | None = None
     timestamp: str
     mode: str
     reason: str | None = None
@@ -50,6 +51,7 @@ class ProvenanceLog:
         source_excerpt: str = "",
         source_documents: list[SourceRef] | None = None,
         *,
+        value: str | None = None,
         reason: str | None = None,
         merged_ids: list[str] | None = None,
     ) -> None:
@@ -59,6 +61,7 @@ class ProvenanceLog:
             id=id,
             source_documents=source_documents or [],
             source_excerpt=source_excerpt,
+            value=value,
             timestamp=_utc_timestamp(),
             mode=self._mode,
             reason=reason,

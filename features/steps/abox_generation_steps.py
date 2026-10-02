@@ -179,6 +179,18 @@ def step_given_llm_returns_instance_without_slots(state: dict, name: str, klass:
 
 @given(
     parsers.re(
+        rf"the LLM returns the instances {quoted('first')} and {quoted('second')} "
+        rf"of class {word('klass')}\s*$"
+    )
+)
+def step_given_llm_returns_two_instances(
+    state: dict, first: str, second: str, klass: str
+) -> None:
+    remember(state, (first, klass, {}), (second, klass, {}))
+
+
+@given(
+    parsers.re(
         rf"an existing A-Box in which {word('name')} has the slot {word('slot')} "
         rf"with the value {quoted('value')}"
     )
@@ -276,6 +288,48 @@ def step_then_outside_class_instance_not_written(state: dict, klass: str) -> Non
 @then(parsers.re(rf'an {quoted("event")} event is recorded in the provenance log'))
 def step_then_event_recorded_in_provenance_log(event: str, provenance_path: Path) -> None:
     assert event in event_names(provenance_path), event_names(provenance_path)
+
+
+@then(
+    parsers.re(rf'the instance {quoted("name")} is written\s*$')
+)
+def step_then_instance_is_written(state: dict, name: str) -> None:
+    assert name in entries(state), list(entries(state))
+    state["checked"] = name
+
+
+@then(parsers.re(rf"the instance has no slot {word('slot')}\s*$"))
+def step_then_instance_has_no_slot(state: dict, slot: str) -> None:
+    entry = entries(state)[state["checked"]]
+    assert slot not in entry, entry
+
+
+@then(
+    parsers.re(
+        rf'an {quoted("event")} event with the reason {quoted("reason")} is recorded '
+        rf"for the value {quoted('value')}"
+    )
+)
+def step_then_rejection_recorded_for_value(
+    provenance_path: Path, event: str, reason: str, value: str
+) -> None:
+    entry = event_named(provenance_path, event)
+    assert entry["reason"] == reason, entry
+    assert entry["value"] == value, entry
+
+
+@then(parsers.re(rf"one instance {word('name')} is written"))
+def step_then_one_instance_is_written(state: dict, name: str) -> None:
+    assert list(entries(state)) == [name], entries(state)
+
+
+@then(
+    parsers.re(
+        rf'an {quoted("event")} event with the reason {quoted("reason")} is recorded\s*$'
+    )
+)
+def step_then_event_with_reason_recorded(provenance_path: Path, event: str, reason: str) -> None:
+    assert event_named(provenance_path, event)["reason"] == reason
 
 
 # Then: provenance

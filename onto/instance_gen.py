@@ -21,6 +21,7 @@ _UPDATED = "instance.updated"
 _REJECTED = "instance.rejected"
 _NOT_IN_TBOX = "not_in_tbox"
 _IDENTIFIER_TAKEN = "identifier_taken"
+_UNRESOLVED = "unresolved_reference"
 
 _INSTRUCTIONS = """You are an ontology engineer. Read the source text and name the concrete \
 entities it states, as instances of the classes listed below.
@@ -139,11 +140,15 @@ def _instance(proposal: _Proposal, slots: list[str], chunk: Chunk) -> Instance:
     )
 
 
-def _entry(instance: Instance) -> dict[str, Any]:
+def _entry(instance: Instance, unresolved: dict[str, str]) -> dict[str, Any]:
     """One instance as written: its class, the slot values stated for it, and its provenance."""
     return {
         "class": instance.class_name,
-        **instance.slot_values,
+        **{
+            slot: value
+            for slot, value in instance.slot_values.items()
+            if slot not in unresolved
+        },
         "annotations": {
             "source_documents": {
                 "tag": "source_documents",
@@ -233,11 +238,30 @@ def _merge(entries: dict[str, Any], instances: dict[str, Instance], log: Provena
     An instance already there is not restated by a later document that names the same entity
     with less of it: the earlier entry stands and cites the new chunk, which is how a class
     the corpus names twice is treated in the T-Box.
+
+    A slot value has to be resolved once every instance is known, because the chunk that
+    states it may well not be the chunk that writes the entity it points at. A value that
+    names nothing in the A-Box is left out and recorded: a slot filled with a dangling name
+    states a fact the ontology cannot stand behind, and inventing the missing instance is a
+    larger change than the corpus made.
     """
+    written = set(entries) | set(instances)
     for instance in instances.values():
+        unresolved = {
+            slot: value for slot, value in instance.slot_values.items() if value not in written
+        }
+        for value in unresolved.values():
+            log.record(
+                event=_REJECTED,
+                id=instance.id,
+                source_documents=instance.source_documents,
+                source_excerpt=instance.source_excerpt,
+                value=value,
+                reason=_UNRESOLVED,
+            )
         entry = entries.get(instance.id)
         if entry is None:
-            entries[instance.id] = _entry(instance)
+            entries[instance.id] = _entry(instance, unresolved)
             event = _CREATED
         else:
             _cite_entry(entry, instance)
