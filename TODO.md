@@ -153,3 +153,100 @@ gdzie `1_6_TDI` nie jest instancją. Trzeba najpierw zmienić ten scenariusz.
 - Timeout i ponowienia z `onto/llm_litellm.py` celowo nie mają scenariusza: to zachowanie
   adaptera, który jest testowany jednostkowo (`tests/test_llm_adapters.py`,
   `tests/test_embedding_adapters.py`).
+
+## Plan: typowanie i publikacja jako biblioteka
+
+Przeprowadzone pomiary, na których plan opiera się (stan na 2026-10-02):
+
+- `onto/` jest w pełni zadnotowany: 0 błędów pod `disallow_untyped_defs`,
+  `warn_return_any`, `disallow_any_generics` i `warn_unreachable` (14 modułów).
+- Braki są wyłącznie w warstwie testów: 88 brakujących adnotacji zwracanych,
+  20 zwrotów `Any`, 176 surowych generyków — wszystkie w `features/` i `tests/`.
+  158 z nich to `state: dict`, czyli stan współdzielony pytest-bdd, z natury `Any`.
+- Nie ma żadnego `type: ignore` w repozytorium.
+- `python_version = "3.11"` przy venvie na 3.12.14 — świadome i poprawne, zostawić.
+- `LICENSE` to MIT, © 2026 Leszek Albrzykowski. **Pliku nie wolno zmieniać** — tylko
+  wskazywać go z `pyproject.toml`.
+- W historii git nie ma sekretów: 0 wartości `sk-` dłuższych niż 20 znaków,
+  `config.yaml` nigdy nie był śledzony.
+- `py.typed` nie ma, więc konsument nie dostaje żadnych typów.
+- Globalne `ignore_missing_imports = true` ukrywa dokładnie dwa moduły bez `py.typed`:
+  `yaml` (runtime) i `linkml` (dev, w `features/steps/`, zero `.pyi`). Wszystkie
+  pozostałe (`docx`, `litellm`, `openai`, `pdfminer`, `pydantic`, `pytest`, `pytest_bdd`)
+  mają `py.typed`.
+
+### Krok 1 — `onto.*` twardo zadnotowany
+
+W `[tool.mypy]` dodać nadpisanie:
+
+```toml
+[[tool.mypy.overrides]]
+# `onto/` jest dziś w pełni zadnotowany; to trzyma go w tym miejscu. Warstwa testów
+# jest wyłączona celowo: pytest-bdd przekazuje stan przez gołe `dict`.
+module = "onto.*"
+disallow_untyped_defs = true
+warn_return_any = true
+disallow_any_generics = true
+```
+
+`onto/__init__.py` istnieje, więc nazwy modułów to `onto.config`, `onto.builder` itd.
+i wzorzec `onto.*` je obejmuje. Oczekiwany wynik: `Success: no issues found in
+14 source files`, potem 39 plików na pełnym przebiegu.
+
+### Krok 2 — zawęzić `ignore_missing_imports`
+
+Usunąć globalne `ignore_missing_imports = true` i zastąpić nadpisańiem:
+
+```toml
+[[tool.mypy.overrides]]
+# PyYAML i linkml nie dostarczają `py.typed`, więc mypy nie ma czego dla nich czytać
+module = ["yaml.*", "linkml.*"]
+ignore_missing_imports = true
+```
+
+Uwaga: mypy nie zna przeciwnika `--no-ignore-missing-imports`, więc usunięcia nie da się
+wydryfować z CLI. Powyższe wyliczenie importów jest dowodem, że lista jest kompletna.
+Jeśli przy przebiegu wyskoczy trzeci moduł, odezwie się natychmiast.
+
+### Krok 3 — typy docierają do konsumenta
+
+Dodać pusty `onto/py.typed` (znacznik PEP 561, treść celowo pusta) oraz w
+`[tool.setuptools]`:
+
+```toml
+package-data = { onto = ["py.typed"] }
+```
+
+Na repozytorium nie wpływa: pakiet jest instalowany edytowalnie, a `mypy_path = "."`
+i tak czyta `onto` z drzewa źródeł. Znaczenie ma tylko dla prawdziwego koła.
+
+Weryfikacja wymaga `build` i `setuptools`, których w venv nie ma ani jednego, ani drugiego
+(`ModuleNotFoundError: No module named 'setuptools'`). Dodać oba do grupy `dev` (MIT,
+licencja w porządku), zbudować `python -m build` i potwierdzić, że `onto/py.typed`
+jest w środku koła. Bez tego kroku zmiana pakowania jest niesprawdzona.
+
+### Krok 4 — metadane `[project]` (do decyzji)
+
+`[project]` ma sześć kluczy: `name`, `version`, `description`, `requires-python`,
+`scripts`, `dependencies`. Brakuje `readme`, `license`, `license-files`, `authors`,
+`keywords`, `classifiers`, `urls`. Pliki na dysku są, tylko nie są zadeklarowane, więc
+strona pakietu na PyPI wygląda pusto.
+
+Uwaga techniczna: forma SPDX `license = "MIT"` z `license-files` to PEP 639 i wymaga
+setuptools ≥ 77, a teraz wymagane jest `setuptools>=68`. Trzeba podnieść wymaganie
+i użyć formy SPDX; dokładne minimum do potwierdzenia przy wdrożeniu, nie z pamięci.
+`LICENSE` przy tym pozostaje nietknięty — jest tylko wskazywany.
+
+### Otwarte pytania
+
+1. **Zakres:** kroki 1–3, czy dokładnie te plus krok 4? Rekomendacja: kroki 1–4 i jedna
+   linia `opencode.json` do `.gitignore`, bo `opencode.json` jest nieśledzony i nie jest
+   zignorowany, więc w publicznym repozytorium wisi jako obcy plik.
+2. **Autor do publikacji:** imię i nazwisko oraz e-mail, które mają trafić do
+   `authors`. `LICENSE` mówi „Leszek Albrzykowski", ale pakiet nazywa się
+   `onto-builder`, a repozytorium `albrzykowski/onto` — decyzja należy do właściciela.
+3. **Klasyfikatory:** czy ma być `License :: OSI Approved :: MIT License` obok pola
+   `license`, czy samo pole.
+4. **CI:** brak `.github/`. Warto dodać przepłyg na trzy udokumentowane kontrole
+   (`pytest`, `ruff`, `mypy`), ale dopiero po krokach 1–4. Uwaga: `LD_LIBRARY_PATH`
+   z `AGENTS.md` to obejście NixOS-a i nie może trafić do publicznego przepływu.
